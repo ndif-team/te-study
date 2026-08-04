@@ -1,0 +1,83 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The repo carries ~650 MB of ONNX chunks in static/model-v2/. The test
+          # suite runs in mock-model mode and never reads them, so skip the LFS/
+          # blob cost where possible by doing a shallow checkout.
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase
+        run: |
+          supabase start -x vector,imgproxy,edge-runtime,logflare
+          # `supabase start` applies migrations, but `db reset` on some CLI
+          # versions silently skips them — run `migration up` so a schema drift
+          # fails here rather than in a study session.
+          supabase migration up --local
+
+      - name: Write env
+        run: |
+          {
+            echo "VITE_SUPABASE_URL=$(supabase status -o env | grep '^API_URL=' | cut -d= -f2- | tr -d '\"')"
+            echo "VITE_SUPABASE_ANON_KEY=$(supabase status -o env | grep '^ANON_KEY=' | cut -d= -f2- | tr -d '\"')"
+            echo "SERVICE_ROLE_KEY=$(supabase status -o env | grep '^SERVICE_ROLE_KEY=' | cut -d= -f2- | tr -d '\"')"
+            echo "VITE_QUALTRICS_POST_SURVEY_URL=https://example.qualtrics.com/jfe/form/SV_CI"
+            echo "VITE_STUDY_MOCK_MODEL=true"
+            echo "VITE_STUDY_ENABLED=true"
+          } > .env
+          # Never print the keys; just prove the file has the right shape.
+          cut -d= -f1 .env
+
+      - run: npm ci --legacy-peer-deps
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        # Runs against `vite dev` (see playwright.config.ts) so the 650 MB of
+        # static assets are never copied into a build.
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: No third-party requests in a production build
+        # The study must not cause a participant's browser to contact anyone but
+        # us. Upstream TE pulls its ONNX runtime from jsDelivr, its tokenizer from
+        # the Hugging Face CDN, KaTeX from jsDelivr, fonts from Google, and embeds
+        # a YouTube iframe that loads DoubleClick. All are vendored or removed;
+        # this is the check that keeps them that way.
+        run: |
+          set -a; . ./.env; set +a
+          # BASE_PATH= builds for a domain root so the artifact can be served
+          # directly here; the real Pages build uses the default /te-study.
+          BASE_PATH= VITE_STUDY_MOCK_MODEL=true npm run build
+          npx --yes http-server build -p 5299 --silent &
+          for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:5299/ && break; sleep 1; done
+          node scripts/check-external-requests.mjs "http://127.0.0.1:5299/?PROLIFIC_PID=ci-leakcheck" --wait-ms 20000

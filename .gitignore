@@ -1,0 +1,26 @@
+.DS_Store
+node_modules
+/build
+/.svelte-kit
+/package
+.env
+.env.*
+!.env.example
+.vercel
+.output
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+yarn.lock
+
+__pycache__
+
+params_output
+
+static/consent-form.pdf
+# test artifacts
+/test-results/
+/playwright-report/
+/blob-report/
+
+.dev-server.pid
+.dev-server.log
