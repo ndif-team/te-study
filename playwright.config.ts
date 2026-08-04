@@ -54,7 +54,11 @@ export default defineConfig({
 		}
 	],
 	webServer: {
-		command: `npx vite dev --port ${PORT} --strictPort`,
+		// --host 127.0.0.1 is load-bearing: Vite otherwise binds to `localhost`,
+		// which resolves to ::1 first on GitHub runners, while the readiness probe
+		// below polls 127.0.0.1. The server came up in ~1s and the probe still
+		// timed out for the full budget.
+		command: `npx vite dev --host 127.0.0.1 --port ${PORT} --strictPort`,
 		url: `http://127.0.0.1:${PORT}`,
 		reuseExistingServer: !process.env.CI,
 		// Cold-start on a 2-core CI runner is slow: Vite has to pre-bundle a large

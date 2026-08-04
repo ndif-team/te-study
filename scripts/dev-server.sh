@@ -16,7 +16,7 @@ start() {
     echo "already running (pid $(cat "$PIDFILE")) on :$PORT"; return 0
   fi
   cd "$ROOT"
-  nohup npx vite dev --port "$PORT" --strictPort >"$LOGFILE" 2>&1 &
+  nohup npx vite dev --host 127.0.0.1 --port "$PORT" --strictPort >"$LOGFILE" 2>&1 &
   echo $! >"$PIDFILE"
   for _ in $(seq 1 90); do
     if curl -sf -o /dev/null "http://127.0.0.1:$PORT/"; then
