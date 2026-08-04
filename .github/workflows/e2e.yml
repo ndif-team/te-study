@@ -37,16 +37,34 @@ jobs:
 
       - name: Write env
         run: |
+          # Call `supabase status` ONCE. Each invocation reconciles the stack and
+          # prints "Stopped services: …" for the containers excluded at start;
+          # calling it three times (once per key) produced empty values, which
+          # surfaced as ~20 unrelated test failures rather than an error here.
+          # Keep only KEY=VALUE lines so the warnings do not break sourcing.
+          supabase status -o env | grep -E '^[A-Z0-9_]+=' > /tmp/sb.env
+          set -a; . /tmp/sb.env; set +a
+
+          # Fail at the cause, not 20 assertions downstream.
+          for v in API_URL ANON_KEY SERVICE_ROLE_KEY; do
+            if [ -z "${!v}" ]; then echo "::error::supabase status did not report $v"; exit 1; fi
+          done
+
           {
-            echo "VITE_SUPABASE_URL=$(supabase status -o env | grep '^API_URL=' | cut -d= -f2- | tr -d '\"')"
-            echo "VITE_SUPABASE_ANON_KEY=$(supabase status -o env | grep '^ANON_KEY=' | cut -d= -f2- | tr -d '\"')"
-            echo "SERVICE_ROLE_KEY=$(supabase status -o env | grep '^SERVICE_ROLE_KEY=' | cut -d= -f2- | tr -d '\"')"
+            echo "VITE_SUPABASE_URL=$API_URL"
+            echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
             echo "VITE_QUALTRICS_POST_SURVEY_URL=https://example.qualtrics.com/jfe/form/SV_CI"
             echo "VITE_STUDY_MOCK_MODEL=true"
             echo "VITE_STUDY_ENABLED=true"
           } > .env
-          # Never print the keys; just prove the file has the right shape.
+
+          # Never print the keys; prove the shape and that the URL resolves.
           cut -d= -f1 .env
+          echo "API_URL=$API_URL"
+          curl -sf -o /dev/null "$API_URL/rest/v1/" -H "apikey: $ANON_KEY" \
+            && echo "PostgREST reachable" \
+            || { echo "::error::PostgREST not reachable at $API_URL"; exit 1; }
 
       - run: npm ci --legacy-peer-deps
 

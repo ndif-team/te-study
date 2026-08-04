@@ -8,12 +8,19 @@ export { STUDY_UNITS };
  * nothing else, so assertions have to come in over the privileged path — which
  * is also how the real analysis will read this data.
  */
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? 'http://127.0.0.1:56321';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SERVICE_ROLE_KEY ?? '';
 export const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 
-if (!SERVICE_KEY) {
-	throw new Error('SERVICE_ROLE_KEY is required to run the E2E suite (see .env).');
+// No defaults. An earlier version fell back to a hardcoded localhost port, so a
+// misconfigured environment produced ~20 baffling assertion failures instead of
+// one clear message.
+for (const [name, value] of Object.entries({
+	VITE_SUPABASE_URL: SUPABASE_URL,
+	VITE_SUPABASE_ANON_KEY: ANON_KEY,
+	SERVICE_ROLE_KEY: SERVICE_KEY
+})) {
+	if (!value) throw new Error(`${name} is required to run the E2E suite (see .env).`);
 }
 
 export type TeSession = {
