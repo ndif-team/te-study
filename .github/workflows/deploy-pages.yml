@@ -51,10 +51,23 @@ jobs:
       - name: Guard against a mock-model deploy
         # Shipping the E2E mock would give every participant canned data instead
         # of a live model, and it is a one-word mistake.
+        #
+        # The check is on the build input plus an exact-value match in the
+        # bundle. An earlier version grepped /VITE_STUDY_MOCK_MODEL.*true/, which
+        # matched the comparison expression `...VITE_STUDY_MOCK_MODEL)==="true"`
+        # that env.ts compiles to — so it failed every build regardless of the
+        # actual setting. `.*` across minified JS matches far more than intended.
+        env:
+          VITE_STUDY_MOCK_MODEL: 'false'
         run: |
-          if grep -rql "VITE_STUDY_MOCK_MODEL.*true" build/_app 2>/dev/null; then
-            echo "::error::build appears to have mock-model mode enabled"; exit 1
+          test "$VITE_STUDY_MOCK_MODEL" = "false" || {
+            echo "::error::VITE_STUDY_MOCK_MODEL is '$VITE_STUDY_MOCK_MODEL', expected false"; exit 1; }
+          if grep -rqF 'VITE_STUDY_MOCK_MODEL:"true"' build/_app; then
+            echo "::error::built bundle has mock-model mode enabled"; exit 1
           fi
+          grep -rqF 'VITE_STUDY_MOCK_MODEL:"false"' build/_app || {
+            echo "::error::could not confirm mock-model is disabled in the bundle"; exit 1; }
+          echo "mock-model mode is off in the built bundle"
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
