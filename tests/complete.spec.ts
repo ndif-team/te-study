@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { newPid, studyUrl, waitForEvents, typesOf, completeAllUnits } from './helpers';
+import { newPid, railUrl, waitForEvents, typesOf, completeAllUnits } from './helpers';
 
 test.describe('completion and handoff', () => {
 	test('finishing the last unit logs study_completed and offers the post-survey', async ({
 		page
 	}) => {
 		const pid = newPid('complete');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await completeAllUnits(page);
 
 		await waitForEvents(
@@ -21,7 +21,7 @@ test.describe('completion and handoff', () => {
 
 	test('the handoff URL carries the Prolific identifiers to Qualtrics', async ({ page }) => {
 		const pid = newPid('handoff');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await completeAllUnits(page);
 
 		const href = await page.getByTestId('post-survey-link').getAttribute('href');

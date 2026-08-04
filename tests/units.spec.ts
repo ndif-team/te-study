@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
 	newPid,
-	studyUrl,
+	railUrl,
 	waitForEvents,
 	typesOf,
 	beginStudy,
@@ -13,7 +13,7 @@ import {
 test.describe('unit progression', () => {
 	test('emits step_started/step_completed for every unit, in order', async ({ page }) => {
 		const pid = newPid('units');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await completeAllUnits(page);
 
 		const events = await waitForEvents(
@@ -32,7 +32,7 @@ test.describe('unit progression', () => {
 
 	test('the panel shows progress and advances one unit at a time', async ({ page }) => {
 		const pid = newPid('units-ui');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await beginStudy(page);
 
 		await expect(page.getByTestId('study-progress')).toHaveText(`Step 1 of ${STUDY_UNITS.length}`);
@@ -47,7 +47,7 @@ test.describe('unit progression', () => {
 	test('the rail can be collapsed to uncover the full visualisation', async ({ page }) => {
 		// TE lays out horizontally with a 1300px minimum, so the rail floats above
 		// it. Participants need a way to see what it covers.
-		await page.goto(studyUrl(newPid('units-collapse')));
+		await page.goto(railUrl(newPid('units-collapse')));
 		await beginStudy(page);
 
 		await page.getByTestId('collapse-panel').click();
@@ -62,7 +62,7 @@ test.describe('unit progression', () => {
 
 	test('"Use this prompt" loads the unit prompt into the tool and logs it', async ({ page }) => {
 		const pid = newPid('units-prompt');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await beginStudy(page);
 
 		const unit = STUDY_UNITS[0];

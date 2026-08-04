@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { STUDY_UNITS, newPid, getEvents, waitForEvents, answerAndAdvance } from './helpers';
+import {
+	STUDY_UNITS,
+	newPid,
+	railUrl,
+	getEvents,
+	waitForEvents,
+	answerAndAdvance
+} from './helpers';
 
 /**
  * Runs the core-path prompts through the REAL GPT-2 and reports what it
@@ -48,9 +55,9 @@ test.describe('real GPT-2 prompt verification', () => {
 		 */
 		for (const { unit, index } of prompts) {
 			const pid = newPid(`real-model-u${index}`);
-			await page.goto(`/?PROLIFIC_PID=${pid}`);
+			await page.goto(railUrl(pid));
 			await page.evaluate(() => localStorage.clear());
-			await page.goto(`/?PROLIFIC_PID=${pid}`);
+			await page.goto(railUrl(pid));
 
 			await expect(page.getByTestId('model-loading')).toBeHidden({ timeout: 12 * 60 * 1000 });
 			await page.getByTestId('begin-study').click();

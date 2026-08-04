@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
 	newPid,
-	studyUrl,
+	railUrl,
 	waitForEvents,
 	beginStudy,
 	answerAndAdvance,
@@ -16,7 +16,7 @@ test.describe('embedded checks', () => {
 		expect(firstChoiceIdx, 'config must contain at least one choice check').toBeGreaterThan(-1);
 
 		const pid = newPid('check-right');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await beginStudy(page);
 		for (let i = 0; i < firstChoiceIdx; i++) await answerAndAdvance(page, i);
 
@@ -41,7 +41,7 @@ test.describe('embedded checks', () => {
 		expect(firstChoiceIdx).toBeGreaterThan(-1);
 
 		const pid = newPid('check-wrong');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await beginStudy(page);
 		for (let i = 0; i < firstChoiceIdx; i++) await answerAndAdvance(page, i);
 
@@ -75,7 +75,7 @@ test.describe('embedded checks', () => {
 		);
 
 		const pid = newPid('check-token');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await beginStudy(page);
 		for (let i = 0; i < firstTopTokenIdx; i++) await answerAndAdvance(page, i);
 

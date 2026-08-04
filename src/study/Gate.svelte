@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { isFetchingModel } from '~/store';
 	import { MOCK_MODEL, MIN_STUDY_WIDTH } from './env';
-	import { phase, unitIdx, telemetryReady } from './store';
-	import { STUDY_UNITS, STUDY_ARM } from './config';
+	import { phase, unitIdx, telemetryReady, railActive, textbookTotal } from './store';
+	import { STUDY_UNITS } from './config';
 	import { track } from './telemetry';
 
 	/**
@@ -15,8 +15,12 @@
 
 	const begin = () => {
 		phase.set('running');
-		const first = STUDY_UNITS[$unitIdx];
-		if (first) track('step_started', first.id, { index: $unitIdx, resumed: $unitIdx > 0 });
+		// Only our own rail emits unit-level step events. With the rail off,
+		// progress is tracked through TE's textbook in StudyShell instead.
+		if ($railActive) {
+			const first = STUDY_UNITS[$unitIdx];
+			if (first) track('step_started', first.id, { index: $unitIdx, resumed: $unitIdx > 0 });
+		}
 	};
 </script>
 
@@ -39,14 +43,27 @@
 	<div class="st-overlay" data-testid="study-intro">
 		<div class="st-card">
 			<h1>Watching a language model run</h1>
-			<p>
-				You will work through {STUDY_UNITS.length} short steps with a live GPT-2 model running entirely
-				in your browser. Each step gives you something to do, a short explanation, and one question.
-			</p>
-			<p>
-				The questions are there so we know the tool was used — they are not a test, and getting one
-				wrong will not stop you moving on or affect your payment.
-			</p>
+			{#if $railActive}
+				<p>
+					You will work through {STUDY_UNITS.length} short steps with a live GPT-2 model running entirely
+					in your browser. Each step gives you something to do, a short explanation, and one question.
+				</p>
+				<p>
+					The questions are there so we know the tool was used — they are not a test, and getting
+					one wrong will not stop you moving on or affect your payment.
+				</p>
+			{:else}
+				<p>
+					You will explore a live GPT-2 model running entirely in your browser, guided by the tool's
+					own walkthrough — the panel on screen takes you through it {$textbookTotal
+						? `in ${$textbookTotal} steps`
+						: 'step by step'}.
+				</p>
+				<p>
+					Follow it at your own pace and try things out as you go. When you reach the last step, a
+					button will appear to take you to a short questionnaire.
+				</p>
+			{/if}
 			<p class="st-muted">
 				This is GPT-2, a small model from 2019 that was never trained to chat. It is far weaker than
 				ChatGPT, and it can produce text that is wrong or odd. That is expected — you are here to

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { newPid, getEvents, waitForEvents, beginStudy, STUDY_UNITS } from './helpers';
+import { newPid, railUrl, getEvents, waitForEvents, beginStudy, STUDY_UNITS } from './helpers';
 
 /**
  * Transformer Explainer samples: `predictedToken` is `randomChoice()` over the
@@ -22,7 +22,7 @@ test.describe('prediction determinism', () => {
 
 	test('the graded rank-0 token is stable across repeated runs', async ({ page }) => {
 		const pid = newPid('determinism');
-		await page.goto(`/?PROLIFIC_PID=${pid}`);
+		await page.goto(railUrl(pid));
 		await expect(page.getByTestId('model-loading')).toBeHidden({ timeout: 12 * 60 * 1000 });
 		await beginStudy(page);
 

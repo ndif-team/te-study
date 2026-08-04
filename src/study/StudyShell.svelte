@@ -1,13 +1,25 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { isFetchingModel, modelData, tokens, userId } from '~/store';
+	import { isFetchingModel, modelData, tokens, userId, textbookCurrentPage } from '~/store';
+	import { textPages } from '~/utils/textbookPages';
 	import Gate from './Gate.svelte';
 	import StudyPanel from './StudyPanel.svelte';
+	import FinishBar from './FinishBar.svelte';
 	import Complete from './Complete.svelte';
-	import { MIN_STUDY_WIDTH, MOCK_MODEL, STUDY_ENABLED } from './env';
+	import { MIN_STUDY_WIDTH, MOCK_MODEL, STUDY_ENABLED, activityRailEnabled } from './env';
 	import { parseProlificFromUrl } from './prolific';
-	import { phase, unitIdx, prolificParams, telemetryReady, currentStepIdNow } from './store';
+	import {
+		phase,
+		unitIdx,
+		prolificParams,
+		telemetryReady,
+		currentStepIdNow,
+		railActive,
+		textbookFurthest,
+		textbookTotal,
+		textbookStepId
+	} from './store';
 	import {
 		initSession,
 		track,
@@ -69,14 +81,60 @@
 		});
 	}
 
+	/**
+	 * Follows the participant through Transformer Explainer's OWN 20-page
+	 * textbook — the walkthrough the tool was evaluated with, and the one this
+	 * arm relies on instead of adding a second tutorial.
+	 *
+	 * Reads `textbookCurrentPage` rather than the `open-textbook` dataLayer
+	 * pushes: the store is the source of truth (the dataLayer events are a
+	 * side-effect of only some navigation paths), and `textPages.length` comes
+	 * from upstream so the finish line moves if upstream adds a page.
+	 */
+	function watchTextbook(): () => void {
+		textbookTotal.set(textPages.length);
+		let furthest = -1;
+
+		return textbookCurrentPage.subscribe((idx) => {
+			if (typeof idx !== 'number') return;
+			// Always publish position, even when paging backwards, so interactions
+			// are attributed to where the participant actually is.
+			textbookStepId.set(textPages[idx]?.id ?? null);
+
+			if (idx <= furthest) return;
+			furthest = idx;
+			textbookFurthest.set(idx);
+
+			const activePhase = get(phase);
+			if (activePhase !== 'running') return;
+
+			track('step_started', textPages[idx]?.id ?? `page-${idx}`, {
+				surface: 'te_textbook',
+				page_index: idx,
+				page_total: textPages.length
+			});
+
+			if (idx >= textPages.length - 1) {
+				track('step_completed', textPages[idx]?.id ?? `page-${idx}`, {
+					surface: 'te_textbook',
+					tutorial_complete: true
+				});
+			}
+		});
+	}
+
 	onMount(() => {
 		if (!STUDY_ENABLED) return;
 
 		let cancelled = false;
 
 		(async () => {
-			const params = parseProlificFromUrl(new URL(window.location.href).searchParams);
+			const search = new URL(window.location.href).searchParams;
+			const params = parseProlificFromUrl(search);
 			prolificParams.set(params);
+
+			const rail = activityRailEnabled(search);
+			railActive.set(rail);
 
 			const ok = await initSession(params);
 			if (cancelled) return;
@@ -91,6 +149,7 @@
 			cleanups.push(installDataLayerProxy(() => currentStepIdNow()));
 			cleanups.push(installUnloadFlush());
 			cleanups.push(watchModelRuns());
+			cleanups.push(watchTextbook());
 
 			// Resume mid-study rather than restarting on a refresh.
 			const resumedIdx = readResumeUnitIdx();
@@ -100,6 +159,7 @@
 				resumed: resumedIdx > 0,
 				has_prolific: Boolean(params),
 				mock_model: MOCK_MODEL,
+				activity_rail: rail,
 				viewport_w: window.innerWidth,
 				referrer: document.referrer || null
 			});
@@ -137,7 +197,11 @@
 {#if STUDY_ENABLED}
 	<Gate />
 	{#if $phase === 'running'}
-		<StudyPanel />
+		{#if $railActive}
+			<StudyPanel />
+		{:else}
+			<FinishBar />
+		{/if}
 	{:else if $phase === 'complete'}
 		<Complete />
 	{/if}

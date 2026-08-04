@@ -60,6 +60,19 @@ export function studyUrl(pid: string, extra: Record<string, string> = {}): strin
 	return `/?${params.toString()}`;
 }
 
+/**
+ * The default participant path: Transformer Explainer with its own textbook and
+ * nothing of ours but the gate, the progress bar and the exit.
+ */
+export const plainUrl = (pid: string) => studyUrl(pid, { rail: '0' });
+
+/**
+ * Our 7-unit activity rail, which is OFF by default — TE ships its own
+ * walkthrough and that is what it was evaluated with. Specs that exercise the
+ * rail have to opt in, so they keep testing it while it stays behind the flag.
+ */
+export const railUrl = (pid: string) => studyUrl(pid, { rail: '1' });
+
 export async function getSession(pid: string): Promise<TeSession | undefined> {
 	const rows = await rest<TeSession[]>(
 		`te_sessions?prolific_pid=eq.${encodeURIComponent(pid)}&select=*`
@@ -100,10 +113,17 @@ export async function waitForEvents(
 
 export const typesOf = (events: TeEvent[]) => events.map((e) => e.event_type);
 
-/** Walks the study from the intro screen to the completion screen. */
+/** Enters the study on the rail path (opt-in; see railUrl). */
 export async function beginStudy(page: Page): Promise<void> {
 	await page.getByTestId('begin-study').click();
 	await expect(page.getByTestId('study-panel')).toBeVisible();
+}
+
+/** Enters the study on the DEFAULT path: plain TE plus the finish bar. */
+export async function beginPlain(page: Page): Promise<void> {
+	await page.getByTestId('begin-study').click();
+	await expect(page.getByTestId('finish-bar')).toBeVisible();
+	await expect(page.getByTestId('study-panel')).toBeHidden();
 }
 
 /**

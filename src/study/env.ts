@@ -42,6 +42,29 @@ export const MOCK_MODEL = str(viteEnv.VITE_STUDY_MOCK_MODEL) === 'true';
 export const STUDY_ENABLED = str(viteEnv.VITE_STUDY_ENABLED) !== 'false';
 
 /**
+ * Our own 7-unit activity rail. OFF by default, deliberately.
+ *
+ * Transformer Explainer ships its own 20-page textbook walkthrough, and that is
+ * what Cho et al. evaluated. Layering a second tutorial on top would make this
+ * arm "TE plus our scaffolding" rather than the published baseline the study is
+ * leveraging — and would present participants with two competing tutorials.
+ *
+ * The rail is kept (built and tested) behind this flag in case the arm-parity
+ * argument in prolific-tutorial-design-spec.md §6 wins out later.
+ *
+ * Overridable per-visit with `?rail=1` / `?rail=0` so the two paths can be
+ * piloted and tested against a single build.
+ */
+const railDefault = str(viteEnv.VITE_STUDY_ACTIVITY_RAIL) === 'true';
+
+export function activityRailEnabled(search?: URLSearchParams): boolean {
+	const override = search?.get('rail');
+	if (override === '1' || override === 'true') return true;
+	if (override === '0' || override === 'false') return false;
+	return railDefault;
+}
+
+/**
  * Below this width the study is refused. Transformer Explainer sets its own
  * `minScreenWidth = 1300` in +layout.svelte and lays out horizontally below
  * that, so anything narrower is unusable regardless of our panel.

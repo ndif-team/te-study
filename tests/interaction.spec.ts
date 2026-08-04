@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { newPid, studyUrl, waitForEvents, beginStudy } from './helpers';
+import { newPid, plainUrl, waitForEvents, beginPlain } from './helpers';
 
 /**
  * The wrapper deliberately does not patch Transformer Explainer's components.
@@ -13,8 +13,8 @@ import { newPid, studyUrl, waitForEvents, beginStudy } from './helpers';
 test.describe('dataLayer proxy', () => {
 	test("TE's own interaction events are captured into te_events", async ({ page }) => {
 		const pid = newPid('interaction');
-		await page.goto(studyUrl(pid));
-		await beginStudy(page);
+		await page.goto(plainUrl(pid));
+		await beginPlain(page);
 
 		// Push through TE's real channel, exactly as its components do.
 		await page.evaluate(() => {
@@ -33,14 +33,14 @@ test.describe('dataLayer proxy', () => {
 		const interaction = events.find((e) => e.event_type === 'interaction')!;
 		expect(interaction.payload.te_event).toBe('click-attention-matrix');
 		expect(interaction.payload.block_idx).toBe(3);
-		// Interactions are attributed to whichever unit was on screen.
+		// Attributed to the participant's position in TE's own textbook.
 		expect(interaction.step_id).toBeTruthy();
 	});
 
 	test('the original dataLayer.push still runs, so upstream behaviour is intact', async ({
 		page
 	}) => {
-		await page.goto(studyUrl(newPid('interaction-passthrough')));
+		await page.goto(plainUrl(newPid('interaction-passthrough')));
 		await expect(page.getByTestId('study-intro')).toBeVisible();
 
 		const length = await page.evaluate(() => {
@@ -54,8 +54,8 @@ test.describe('dataLayer proxy', () => {
 
 	test('non-event pushes are ignored rather than logged as noise', async ({ page }) => {
 		const pid = newPid('interaction-noise');
-		await page.goto(studyUrl(pid));
-		await beginStudy(page);
+		await page.goto(plainUrl(pid));
+		await beginPlain(page);
 
 		await page.evaluate(() => {
 			const dl = (window as unknown as { dataLayer: unknown[] }).dataLayer;
@@ -79,13 +79,8 @@ test.describe('dataLayer proxy', () => {
 		// instrumentation. Drives TE's own UI with real clicks — synthetic events
 		// are not enough, e.g. TE's Slider only pushes on mouseup.
 		const pid = newPid('interaction-real');
-		await page.goto(studyUrl(pid));
-		await beginStudy(page);
-
-		// The rail overlays TE's bottom navigation at typical laptop widths, so a
-		// participant reaching for the textbook controls collapses it first. Do
-		// the same here rather than forcing the click past the overlay.
-		await page.getByTestId('collapse-panel').click();
+		await page.goto(plainUrl(pid));
+		await beginPlain(page);
 
 		// TE's textbook page dropdown pushes `open-textbook` on selection.
 		const counter = page.locator('.page-counter');

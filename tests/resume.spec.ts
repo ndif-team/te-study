@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
 	newPid,
-	studyUrl,
+	railUrl,
 	getSession,
 	getEvents,
 	waitForEvents,
@@ -13,7 +13,7 @@ import {
 test.describe('resume', () => {
 	test('a mid-study reload resumes the same session at the same unit', async ({ page }) => {
 		const pid = newPid('resume');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await beginStudy(page);
 
 		await answerAndAdvance(page, 0);
@@ -52,7 +52,7 @@ test.describe('resume', () => {
 
 	test('resuming does not duplicate step_started for units already begun', async ({ page }) => {
 		const pid = newPid('resume-dup');
-		await page.goto(studyUrl(pid));
+		await page.goto(railUrl(pid));
 		await beginStudy(page);
 		await answerAndAdvance(page, 0);
 
