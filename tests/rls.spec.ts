@@ -59,8 +59,20 @@ test.describe('RLS contract', () => {
 		const me = await signInAnon();
 		for (const table of ['te_events', 'te_sessions']) {
 			const res = await fetch(`${API}/rest/v1/${table}?select=*`, asParticipant(me));
-			const rows = await res.json();
-			expect(Array.isArray(rows) ? rows : []).toEqual([]);
+			const body = await res.json();
+
+			// Two acceptable outcomes, and the distinction is worth keeping visible:
+			// a 200 with an empty array means RLS filtered everything out, while a
+			// 4xx means `authenticated` holds no SELECT privilege at all. Both mean
+			// no rows leak. Asserting only `toEqual([])` would silently pass on an
+			// error object coerced to a default, hiding a change in which mechanism
+			// is actually doing the work.
+			if (res.ok) {
+				expect(body, `${table} leaked rows to a participant`).toEqual([]);
+			} else {
+				expect(res.status, `${table} returned an unexpected error`).toBeGreaterThanOrEqual(400);
+				expect(body.code, `${table} denied for an unexpected reason`).toBe('42501');
+			}
 		}
 	});
 
