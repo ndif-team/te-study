@@ -55,6 +55,13 @@ jobs:
 
       - run: npx playwright install --with-deps chromium
 
+      - name: Warm Vite dependency cache
+        # Pre-bundling the dep graph is the slow part of dev-server startup and
+        # it dominated Playwright's webServer timeout on CI hardware. Doing it as
+        # its own step also means a failure here reads as "deps broke" rather
+        # than "tests timed out".
+        run: npx vite optimize --force
+
       - name: E2E tests
         # Runs against `vite dev` (see playwright.config.ts) so the 650 MB of
         # static assets are never copied into a build.

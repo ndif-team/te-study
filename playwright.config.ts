@@ -57,6 +57,12 @@ export default defineConfig({
 		command: `npx vite dev --port ${PORT} --strictPort`,
 		url: `http://127.0.0.1:${PORT}`,
 		reuseExistingServer: !process.env.CI,
-		timeout: 180_000
+		// Cold-start on a 2-core CI runner is slow: Vite has to pre-bundle a large
+		// dep graph (d3, flowbite, onnxruntime-web, transformers.js) before it
+		// serves anything, which blew past 180s. CI warms the cache with
+		// `vite optimize` first; this is the headroom for the rest.
+		timeout: 420_000,
+		stdout: 'pipe',
+		stderr: 'pipe'
 	}
 });
