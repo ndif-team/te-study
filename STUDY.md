@@ -66,9 +66,17 @@ Leave hCaptcha off unless you see abuse — the study URL is the only thing gati
 
 The deploy workflow fails loudly if the Supabase or Qualtrics vars are missing, rather than shipping a study that collects nothing.
 
+Cloudflare additionally needs two real **secrets** (not variables — the token can
+create and overwrite Pages projects on the account):
+
+```bash
+gh secret set CLOUDFLARE_API_TOKEN  --repo ndif-team/te-study   # scope: Account : Cloudflare Pages : Edit
+gh secret set CLOUDFLARE_ACCOUNT_ID --repo ndif-team/te-study
+```
+
 ### 4. Point Qualtrics and Prolific at it
 
-- Study URL: `https://ndif-team.github.io/te-study/?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`
+- Study URL: `https://te-study.pages.dev/?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`
 - The wrapper appends `PROLIFIC_PID` / `STUDY_ID` / `SESSION_ID` to the post-survey URL, so Qualtrics can pick them up as embedded data.
 - **The completion code lives in Qualtrics**, per the Jul 21 decision. Nothing in this repo holds one.
 
@@ -81,6 +89,39 @@ npm test                # 17 unit + 28 E2E
 ```
 
 Then against the deployed URL: open it on a laptop, walk all 7 units, confirm rows land in Supabase.
+
+---
+
+## Hosting: two independent copies
+
+Both deploy from `main` on every push, from the same build definition.
+
+| | URL | Base path | Role |
+|---|---|---|---|
+| **Cloudflare Pages** | `https://te-study.pages.dev/` | `''` (domain root) | **Primary — this is the URL in Prolific** |
+| **GitHub Pages** | `https://ndif-team.github.io/te-study/` | `/te-study` | Warm standby |
+
+Cloudflare is primary because GitHub Pages has a 100 GB/month soft bandwidth
+limit and each first-time participant pulls ~657 MB of model weights. At N≈50
+that is ~33 GB — fine in isolation, but a pilot plus a re-run plus curious
+colleagues eats the margin, and "GitHub throttled us" is a bad thing to discover
+halfway through recruitment. Cloudflare does not meter static bandwidth.
+
+Cloudflare deploys by **direct upload** (`wrangler pages deploy`), not the Git
+integration, which would clone ~600 MB of model chunks on every build.
+
+### Switching to the standby
+
+Change the URL in the Prolific study. Nothing else moves — both hosts talk to
+the same Supabase project and the same Qualtrics survey.
+
+**One caveat, and it matters mid-study:** resume state (`localStorage`) and the
+anonymous Supabase session are both scoped per origin. A participant who has
+already started on `te-study.pages.dev` and is then sent to
+`ndif-team.github.io` will get a **fresh anonymous user and a second
+`te_sessions` row**, and will restart the walkthrough. So switch between waves,
+not during one — and if you must switch mid-wave, expect duplicate sessions for
+the same `prolific_pid` and take the earliest per participant in analysis.
 
 ---
 

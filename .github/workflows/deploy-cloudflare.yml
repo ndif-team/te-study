@@ -1,0 +1,95 @@
+name: deploy-cloudflare
+
+# A second, independent home for the study.
+#
+# GitHub Pages has a 100 GB/month soft bandwidth limit, and each first-time
+# participant pulls ~657 MB of ONNX weights. At N≈50 per arm that is ~33 GB, so
+# a pilot plus a re-run plus curious colleagues is not a comfortable margin —
+# and "GitHub throttled us" is a bad thing to discover halfway through
+# recruitment. Cloudflare Pages does not meter static bandwidth.
+#
+# Deployed by direct upload rather than Cloudflare's Git integration, because
+# the integration clones the whole repo (~600 MB of model chunks) on every
+# build. This reuses the same build definition as the Pages workflow; the only
+# difference is BASE_PATH, since Cloudflare serves from a domain root while
+# GitHub Pages serves from /te-study.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Gated on a repository variable rather than the presence of the secret:
+    # the `secrets` context is not available in a job-level `if`. Set
+    # CLOUDFLARE_ENABLED=true once CLOUDFLARE_API_TOKEN and
+    # CLOUDFLARE_ACCOUNT_ID exist, so this does not fail on every push in the
+    # meantime and train everyone to ignore a red X.
+    if: ${{ vars.CLOUDFLARE_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+
+      - name: Build
+        env:
+          # Public by design — see src/study/env.ts. Same repository *variables*
+          # the GitHub Pages workflow uses.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_QUALTRICS_POST_SURVEY_URL: ${{ vars.VITE_QUALTRICS_POST_SURVEY_URL }}
+          VITE_STUDY_MOCK_MODEL: 'false'
+          VITE_STUDY_ENABLED: 'true'
+          # Empty: Cloudflare Pages serves at the domain root, unlike the
+          # /te-study subpath on GitHub Pages. Getting this wrong yields a page
+          # that loads and then fails to fetch a single model chunk.
+          BASE_PATH: ''
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "::error::VITE_SUPABASE_URL is unset — the study would collect nothing"; exit 1; }
+          test -n "$VITE_QUALTRICS_POST_SURVEY_URL" || { echo "::error::VITE_QUALTRICS_POST_SURVEY_URL is unset — participants would hit a dead end"; exit 1; }
+          npm run build
+
+      - name: Guard against a mock-model deploy
+        env:
+          VITE_STUDY_MOCK_MODEL: 'false'
+        run: |
+          test "$VITE_STUDY_MOCK_MODEL" = "false" || {
+            echo "::error::VITE_STUDY_MOCK_MODEL is '$VITE_STUDY_MOCK_MODEL', expected false"; exit 1; }
+          if grep -rqF 'VITE_STUDY_MOCK_MODEL:"true"' build/_app; then
+            echo "::error::built bundle has mock-model mode enabled"; exit 1
+          fi
+          grep -rqF 'VITE_STUDY_MOCK_MODEL:"false"' build/_app || {
+            echo "::error::could not confirm mock-model is disabled in the bundle"; exit 1; }
+
+      - name: Check Cloudflare upload limits
+        # 25 MiB per file and 20,000 files. The largest asset is the ONNX
+        # runtime at ~22.6 MiB, so the headroom is about 2 MiB — worth failing
+        # here rather than partway through a 688 MB upload.
+        run: |
+          BIG=$(find build -type f -size +25M | head -5)
+          if [ -n "$BIG" ]; then
+            echo "::error::files exceed Cloudflare's 25 MiB limit:"; echo "$BIG"; exit 1
+          fi
+          COUNT=$(find build -type f | wc -l)
+          echo "files: $COUNT ($(du -sh build | cut -f1))"
+          [ "$COUNT" -lt 20000 ] || { echo "::error::over Cloudflare's 20,000 file limit"; exit 1; }
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # `--commit-dirty` because the build output is generated, not committed.
+          command: pages deploy build --project-name=te-study --branch=main --commit-dirty=true
