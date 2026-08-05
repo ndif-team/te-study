@@ -67,12 +67,18 @@ Leave hCaptcha off unless you see abuse — the study URL is the only thing gati
 The deploy workflow fails loudly if the Supabase or Qualtrics vars are missing, rather than shipping a study that collects nothing.
 
 Cloudflare additionally needs two real **secrets** (not variables — the token can
-create and overwrite Pages projects on the account):
+create and overwrite Pages projects on the account), plus a variable to turn the
+workflow on:
 
 ```bash
 gh secret set CLOUDFLARE_API_TOKEN  --repo ndif-team/te-study   # scope: Account : Cloudflare Pages : Edit
 gh secret set CLOUDFLARE_ACCOUNT_ID --repo ndif-team/te-study
+gh variable set CLOUDFLARE_ENABLED  --repo ndif-team/te-study --body true
 ```
+
+You do **not** need to create the Pages project by hand — the workflow creates
+`te-study` if it is missing and skips if it is not. The two secrets are the only
+manual step.
 
 ### 4. Point Qualtrics and Prolific at it
 
