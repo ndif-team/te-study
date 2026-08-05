@@ -177,4 +177,50 @@ test.describe('RLS contract', () => {
 		const rows = await read.json();
 		expect(Array.isArray(rows) ? rows : []).toEqual([]);
 	});
+
+	test('deleting an anonymous auth user does NOT destroy their telemetry', async () => {
+		// Both tables once had `user_id references auth.users on delete cascade`,
+		// so pruning an anonymous user silently erased that participant's session
+		// and every event they produced. Anonymous users accumulate and the usual
+		// advice is to prune them on a schedule — following that mid-study would
+		// have deleted the dataset. This is the guard.
+		const me = await signInAnon();
+		const sid = crypto.randomUUID();
+		const pid = `fk-guard-${Date.now()}`;
+
+		await fetch(
+			`${API}/rest/v1/te_sessions`,
+			asParticipant(me, {
+				method: 'POST',
+				body: JSON.stringify({ id: sid, user_id: me.userId, prolific_pid: pid })
+			})
+		);
+		await fetch(
+			`${API}/rest/v1/te_events`,
+			asParticipant(me, {
+				method: 'POST',
+				body: JSON.stringify({ te_session_id: sid, user_id: me.userId, event_type: 'landed' })
+			})
+		);
+
+		const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
+		await fetch(`${API}/auth/v1/admin/users/${me.userId}`, { method: 'DELETE', headers: svc });
+
+		const sessions = await fetch(`${API}/rest/v1/te_sessions?prolific_pid=eq.${pid}&select=id`, {
+			headers: svc
+		}).then((r) => r.json());
+		expect(sessions, 'session was destroyed by deleting the auth user').toHaveLength(1);
+
+		const events = await fetch(`${API}/rest/v1/te_events?te_session_id=eq.${sid}&select=id`, {
+			headers: svc
+		}).then((r) => r.json());
+		expect(events, 'events were destroyed by deleting the auth user').toHaveLength(1);
+
+		// A deliberate purge must still work, and still take the events with it.
+		await fetch(`${API}/rest/v1/te_sessions?id=eq.${sid}`, { method: 'DELETE', headers: svc });
+		const after = await fetch(`${API}/rest/v1/te_events?te_session_id=eq.${sid}&select=id`, {
+			headers: svc
+		}).then((r) => r.json());
+		expect(after, 'purging a session should cascade to its events').toHaveLength(0);
+	});
 });
