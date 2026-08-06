@@ -22,6 +22,19 @@ const forwardArrow = (page: Page) => page.locator('.nav-section.right');
 const currentPageNumber = async (page: Page): Promise<number> =>
 	Number((await page.locator('.page-counter').innerText()).split('/')[0].trim());
 
+/**
+ * Satisfy the scroll gate: most checks start below the fold in TE's small card,
+ * and forward navigation is refused until the question has actually been in
+ * view. Tests about answering should not have to re-litigate that each time.
+ */
+async function seeTheCheck(page: Page): Promise<void> {
+	const cue = page.getByTestId('scroll-cue');
+	if (await cue.isVisible()) {
+		await cue.click();
+		await expect(cue).toBeHidden();
+	}
+}
+
 test.describe('textbook engagement checks', () => {
 	test('a check appears only on the pages configured to have one', async ({ page }) => {
 		await page.goto(plainUrl(newPid('chk-presence')));
@@ -39,6 +52,7 @@ test.describe('textbook engagement checks', () => {
 		await page.goto(plainUrl(pid));
 		await beginPlain(page);
 		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+		await seeTheCheck(page);
 
 		// "12" is the second option and the correct one.
 		await page.getByTestId('textbook-check').locator('input[type=radio]').nth(1).check();
@@ -62,6 +76,7 @@ test.describe('textbook engagement checks', () => {
 		await page.goto(plainUrl(pid));
 		await beginPlain(page);
 		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+		await seeTheCheck(page);
 
 		await page.getByTestId('textbook-check').locator('input[type=radio]').first().check();
 		await page.getByTestId('check-submit').click();
@@ -86,7 +101,11 @@ test.describe('textbook engagement checks', () => {
 		const startPage = await currentPageNumber(page);
 		await expect(page.getByTestId('check-nudge')).toBeHidden();
 
-		// First press: intercepted. The page must NOT move.
+		// Get past the scroll gate first: the check starts below the fold, so the
+		// first press is spent bringing it into view.
+		await seeTheCheck(page);
+
+		// First press after that: intercepted by the nudge. The page must NOT move.
 		await forwardArrow(page).click();
 		await expect(page.getByTestId('check-nudge')).toBeVisible();
 		expect(await currentPageNumber(page)).toBe(startPage);
@@ -114,7 +133,10 @@ test.describe('textbook engagement checks', () => {
 		await beginPlain(page);
 		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
 
-		// Skip it: nudge, then push past without answering.
+		// Skip it: clear the scroll gate, take the nudge, then push past without
+		// answering. Three presses rather than two now that the question has to be
+		// seen before it can be knowingly declined.
+		await seeTheCheck(page);
 		await forwardArrow(page).click();
 		await forwardArrow(page).click();
 
@@ -271,5 +293,125 @@ test.describe('finishing from inside the textbook card', () => {
 		const done = events.find((e) => e.event_type === 'study_completed')!;
 		expect(done.payload.surface).toBe('textbook_card');
 		expect(done.payload.via).toBe('textbook_progress');
+	});
+});
+
+test.describe('scroll cue for a check below the fold', () => {
+	test('the cue appears when the check is off-screen and clears once it is seen', async ({
+		page
+	}) => {
+		await page.goto(plainUrl(newPid('cue-show')));
+		await beginPlain(page);
+		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+
+		// The card is short enough that the check starts below the fold.
+		await expect(page.getByTestId('scroll-cue')).toBeVisible();
+
+		// Pressing the cue scrolls the question into view, which marks it seen.
+		await page.getByTestId('scroll-cue').click();
+		await expect(page.getByTestId('scroll-cue')).toBeHidden();
+	});
+
+	test('the forward arrow is refused until the check has been seen', async ({ page }) => {
+		const pid = newPid('cue-gate');
+		await page.goto(plainUrl(pid));
+		await beginPlain(page);
+		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+
+		const start = await currentPageNumber(page);
+		await expect(page.getByTestId('scroll-cue')).toBeVisible();
+
+		// Refused — but the check is scrolled into view rather than just blocked,
+		// so the participant is shown the question instead of being stonewalled.
+		await forwardArrow(page).click();
+		expect(await currentPageNumber(page), 'moved on before the check was seen').toBe(start);
+		await expect(page.getByTestId('scroll-cue')).toBeHidden();
+
+		const events = await waitForEvents(
+			pid,
+			(e) => e.some((x) => x.payload?.reason === 'check_offscreen'),
+			'expected the off-screen refusal to be recorded'
+		);
+		expect(events.find((e) => e.payload?.reason === 'check_offscreen')!.step_id).toBe('blocks');
+
+		// Now seen: the normal nudge-once-then-allow behaviour resumes.
+		await forwardArrow(page).click();
+		await expect(page.getByTestId('check-nudge')).toBeVisible();
+		expect(await currentPageNumber(page)).toBe(start);
+
+		await forwardArrow(page).click();
+		await expect.poll(() => currentPageNumber(page)).toBe(start + 1);
+	});
+
+	test('a check already in view imposes no gate at all', async ({ page }) => {
+		// Enlarging the card brings the whole page into view, so there is nothing
+		// to scroll to and nothing should be blocked.
+		await page.goto(plainUrl(newPid('cue-tall')));
+		await beginPlain(page);
+		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+
+		await page.evaluate(() => {
+			// Move the card up as well as growing it. TE docks it near the bottom of
+			// the window, so height alone pushes its own navigation footer off-screen
+			// and nothing in it can be clicked.
+			const container = document.querySelector('.floating-container') as HTMLElement;
+			const card = document.querySelector('.text-card') as HTMLElement;
+			container.style.top = '80px';
+			card.style.height = '700px';
+		});
+
+		await expect(page.getByTestId('scroll-cue')).toBeHidden();
+
+		const start = await currentPageNumber(page);
+		await forwardArrow(page).click();
+		await expect(page.getByTestId('check-nudge')).toBeVisible();
+		expect(await currentPageNumber(page)).toBe(start);
+		await forwardArrow(page).click();
+		await expect.poll(() => currentPageNumber(page)).toBe(start + 1);
+	});
+
+	test('the gate yields rather than trapping anyone if "seen" never registers', async ({
+		page
+	}) => {
+		/*
+		 * The gate depends on an IntersectionObserver firing against a scroll
+		 * container inside a draggable, resizable card. If that ever fails, a
+		 * participant would be stuck on one page with no way forward and no
+		 * explanation — a far worse outcome than an unseen question, and this arm
+		 * has already lost a pilot to a control that would not let people proceed.
+		 * Simulated by pinning `seen` to永 false via a broken observer.
+		 */
+		const pid = newPid('cue-valve');
+		await page.addInitScript(() => {
+			// Neuter IntersectionObserver so nothing is ever marked seen.
+			// @ts-expect-error deliberately replacing the global
+			window.IntersectionObserver = class {
+				observe() {}
+				unobserve() {}
+				disconnect() {}
+			};
+		});
+		await page.goto(plainUrl(pid));
+		await beginPlain(page);
+		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+
+		const start = await currentPageNumber(page);
+		await forwardArrow(page).click();
+		expect(await currentPageNumber(page)).toBe(start);
+		await forwardArrow(page).click();
+		expect(await currentPageNumber(page)).toBe(start);
+
+		// Third press: the valve opens rather than leaving them stranded.
+		await forwardArrow(page).click();
+		await expect
+			.poll(() => currentPageNumber(page), { message: 'participant was trapped on the page' })
+			.toBe(start + 1);
+
+		const events = await waitForEvents(
+			pid,
+			(e) => e.some((x) => x.payload?.reason === 'check_offscreen_override'),
+			'the override must be recorded — it means the cue is not working'
+		);
+		expect(events.some((e) => e.payload?.reason === 'check_offscreen_override')).toBe(true);
 	});
 });

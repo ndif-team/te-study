@@ -31,6 +31,27 @@ export const checkAnswers = writable<Record<string, { answer: string; correct: b
  */
 export const checkNudges = writable<Record<string, boolean>>({});
 
+/**
+ * Pages whose check has actually been scrolled into view.
+ *
+ * TE's textbook card is small and fixed-height, so on most check pages the
+ * question sits below the fold with nothing but a thin scrollbar hinting at it.
+ * A participant can read the visible prose and press next having never known a
+ * question was there — which looks identical in the data to deliberately
+ * skipping one. The Workbench arm has no equivalent problem because its layout
+ * puts the check in view.
+ *
+ * So forward navigation waits until the check has been seen. Not answered —
+ * seen. Answering stays optional (see [[checkNudges]]).
+ */
+export const checkSeen = writable<Record<string, boolean>>({});
+
+/**
+ * How many times a forward press has been refused because the check was still
+ * off-screen. A safety valve, not a metric: see `nudge.ts`.
+ */
+export const checkScrollBlocks = writable<Record<string, number>>({});
+
 /** Whether our own activity rail is mounted this visit (see env.activityRailEnabled). */
 export const railActive = writable(false);
 

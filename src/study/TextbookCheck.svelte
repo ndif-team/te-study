@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { modelData, tokens, predictedToken, temperature } from '~/store';
 	import { TEXTBOOK_CHECKS } from './config';
 	import { gradeCheck, tokenAtRank } from './checks';
-	import { checkAnswers, checkNudges } from './store';
+	import { checkAnswers, checkNudges, checkSeen } from './store';
 	import { track } from './telemetry';
 
 	/**
@@ -31,6 +32,49 @@
 		choice = null;
 		text = '';
 	}
+
+	/**
+	 * Mark the check "seen" once it is actually within the scrolling viewport of
+	 * TE's card, so `nudge.ts` knows whether the participant has had a chance to
+	 * notice it. Observed against the scroll container rather than the window,
+	 * because the check is almost always inside the browser viewport — it is the
+	 * card's own overflow that hides it.
+	 */
+	let el: HTMLDivElement | undefined;
+	let questionEl: HTMLParagraphElement | undefined;
+	let observer: IntersectionObserver | undefined;
+
+	$: if (questionEl && check && !$checkSeen[pageId]) {
+		observer?.disconnect();
+		const root = el?.closest('.textbook-content') as HTMLElement | null;
+		observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (!entry.isIntersecting) continue;
+					const id = pageId;
+					checkSeen.update((m) => (m[id] ? m : { ...m, [id]: true }));
+					observer?.disconnect();
+				}
+			},
+			/*
+			 * Watches the QUESTION TEXT, not the check container, and wants most of
+			 * it in view.
+			 *
+			 * Observing the container at a 1% threshold was tried first and was
+			 * useless: the container's top border peeking over the fold counted as
+			 * "seen", so the cue never appeared on the very pages that need it. The
+			 * meaningful bar is whether the participant could read the question.
+			 *
+			 * Not 1.0, because a question that wraps to more lines than the card can
+			 * show could then never be satisfied. The safety valve in nudge.ts is
+			 * the backstop for the rest.
+			 */
+			{ root, threshold: 0.6 }
+		);
+		observer.observe(questionEl);
+	}
+
+	onDestroy(() => observer?.disconnect());
 
 	$: live = { probabilities: $modelData?.probabilities ?? null, tokens: $tokens ?? null };
 	$: gradeable = check ? gradeCheck(check, { choice, text }, live) : null;
@@ -67,8 +111,8 @@
 </script>
 
 {#if check}
-	<div class="st-check" data-testid="textbook-check" data-page={pageId}>
-		<p class="st-q">{check.question}</p>
+	<div class="st-check" data-testid="textbook-check" data-page={pageId} bind:this={el}>
+		<p class="st-q" bind:this={questionEl}>{check.question}</p>
 
 		{#if check.kind === 'choice'}
 			<div class="st-options">

@@ -6,6 +6,7 @@
 	import TextbookNavigation from './TextbookNavigation.svelte';
 	import TextbookCheck from '~/study/TextbookCheck.svelte';
 	import TextbookFinish from '~/study/TextbookFinish.svelte';
+	import TextbookScrollCue from '~/study/TextbookScrollCue.svelte';
 
 	export let onClose: () => void;
 
@@ -295,6 +296,8 @@
 				<TextbookNavigation {textPages} {isMouseInCard} {isLeftSide} />
 				<!-- Study wrapper: the exit, shown only on the final page. -->
 				<TextbookFinish />
+				<!-- Study wrapper: points at a check that is still below the fold. -->
+				<TextbookScrollCue />
 			</div>
 		</div>
 	</div>

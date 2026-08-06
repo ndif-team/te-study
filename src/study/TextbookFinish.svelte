@@ -43,7 +43,11 @@
 		// Directly above `.navigation-footer` (3.5rem), so the card's own paging
 		// controls stay reachable rather than being covered by this.
 		bottom: 3.5rem;
-		z-index: 20;
+		// Below `.navigation-footer` (z-index 10) — TE's page dropdown opens
+		// upwards into this band from inside the footer's stacking context, and
+		// anything above 10 here swallows clicks on TE's own page list. See
+		// TextbookScrollCue.svelte for the full reasoning.
+		z-index: 5;
 
 		display: flex;
 		align-items: center;
