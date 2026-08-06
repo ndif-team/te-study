@@ -53,12 +53,32 @@ export type StudyCheck =
 	| {
 			/**
 			 * Answerable only by running the tool — the TE-paper engagement-check
-			 * technique. Graded against the model's live top predicted token.
+			 * technique. Graded against the model's live ranked predictions.
 			 */
 			kind: 'top-token';
 			question: string;
+			/**
+			 * Which ranked prediction is being asked about. 0 = most likely (the
+			 * default), 1 = runner-up, and so on. `probabilities` is sorted by
+			 * logit descending and carries an explicit `rank`, so every rank is
+			 * deterministic for a given prompt even though what TE *displays* is
+			 * sampled.
+			 */
+			rank?: number;
 			/** For content review only; grading uses the live prediction. */
 			expectedTopToken?: string;
+	  }
+	| {
+			/**
+			 * Graded against the live tokenisation of whatever text the
+			 * participant currently has loaded, so the answer depends on their own
+			 * input rather than on a fixed key. The strongest engagement check we
+			 * have: it cannot be answered from the page text, only by looking at
+			 * the tokens on screen — and it is the moment "tokens are not words"
+			 * stops being an assertion.
+			 */
+			kind: 'token-count';
+			question: string;
 	  };
 
 export type StudyUnit = {
@@ -228,3 +248,125 @@ export const STUDY_UNITS: StudyUnit[] = [
 
 /** Written to `te_events.payload.arm` and `te_sessions.arm`. */
 export const STUDY_ARM = 'transformer_explainer';
+
+/**
+ * Engagement checks attached to Transformer Explainer's OWN textbook pages.
+ *
+ * CONTENT STATUS: STUB — the structure, grading and telemetry are real and
+ * tested, but every question's wording and every fixed answer still need Gwen's
+ * pass, exactly like STUDY_UNITS above.
+ *
+ * Nine of TE's twenty pages carry a check. The rest are left clean: a question
+ * on every page turns a walkthrough into a quiz, and the point here is
+ * engagement verification matched to the Workbench arm's per-block checks, not
+ * assessment. Pages were chosen to spread across the arc — orientation,
+ * tokenisation, architecture, attention, output, and the two pages with live
+ * controls — and to avoid the purely expository ones (residual, layer norm,
+ * dropout) where the only answerable question is recall of the text just read.
+ *
+ * THE DETERMINISM RULE APPLIES HERE TOO, and it is the thing most likely to be
+ * broken by a well-meaning edit. TE samples: `predictedToken` is randomChoice()
+ * over the top-k distribution at temperature 0.8. So a question may ask what
+ * the model ranks MOST LIKELY (graded against rank 0, deterministic) but must
+ * never ask what the model "said", "output" or "picked" — that varies between
+ * runs of the same prompt and would mark participants wrong at random.
+ *
+ * Keys are TE's own page ids from `src/utils/textbookPages.ts`. A key that does
+ * not match a real page is inert, so `npm run test:unit` asserts every key
+ * resolves — otherwise a typo silently removes a check.
+ */
+export const TEXTBOOK_CHECKS: Record<string, StudyCheck> = {
+	// Orientation. Works even while the weights are still downloading: the
+	// bundled examples carry real logits, so rank 0 is available from the cached
+	// data path too.
+	'how-transformers-work': {
+		kind: 'top-token',
+		question:
+			'Run the model, then read the ranked list. Which token does it rank as MOST likely to come next?'
+	},
+
+	// Tokens are not words. Graded against their own text, so it cannot be
+	// answered by reading the page.
+	embedding: {
+		kind: 'token-count',
+		question: 'Look at how your text has been broken up. How many tokens is it?'
+	},
+
+	blocks: {
+		kind: 'choice',
+		question: 'How many Transformer blocks are stacked in this model?',
+		options: ['6', '12', '24', '48'],
+		correctIndex: 1
+	},
+
+	'multi-head': {
+		kind: 'choice',
+		question: 'How many attention heads does each block use?',
+		options: ['8', '12', '16', '64'],
+		correctIndex: 1
+	},
+
+	// The single most important idea in the whole walkthrough, and the one that
+	// explains why the model cannot "look ahead".
+	'masked-self-attention': {
+		kind: 'choice',
+		question: 'Look at the attention pattern. Can the FIRST token see the LAST token?',
+		options: [
+			'Yes — every token sees every other token',
+			'No — a token sees only itself and the tokens before it',
+			'Only in the final block',
+			'Only when temperature is high'
+		],
+		correctIndex: 1
+	},
+
+	'output-logit': {
+		kind: 'choice',
+		question: 'A token with a higher logit is…',
+		options: [
+			'More likely to be chosen',
+			'Less likely to be chosen',
+			'Longer in characters',
+			'Earlier in the prompt'
+		],
+		correctIndex: 0
+	},
+
+	// Deliberately the runner-up rather than the top token: it requires actually
+	// reading the ranked list rather than the one big number on screen.
+	'output-probabilities': {
+		kind: 'top-token',
+		rank: 1,
+		question: 'Which token is the SECOND most likely to come next?'
+	},
+
+	// A manipulation check: unanswerable without moving the slider. The live
+	// `temperature` value is recorded alongside the answer, so we can tell who
+	// actually moved it from who guessed.
+	temperature: {
+		kind: 'choice',
+		question: 'Drag the temperature down to about 0.1. What happens to the probability bars?',
+		options: [
+			'One token dominates and the rest shrink',
+			'They all become more equal',
+			'They stop changing',
+			'Their order reverses'
+		],
+		correctIndex: 0
+	},
+
+	// Worth keeping for a reason beyond pedagogy: it puts TE's sampling
+	// behaviour in front of participants, which is exactly the arm difference
+	// the methods section has to describe.
+	sampling: {
+		kind: 'choice',
+		question: 'Set Top-k to 1. Run the same prompt twice — would you get the same token both times?',
+		options: [
+			'Yes, always',
+			'No, it stays random',
+			'Only at temperature 0',
+			'Only for short prompts'
+		],
+		correctIndex: 0
+	}
+};

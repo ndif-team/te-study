@@ -9,6 +9,8 @@
 	import Complete from './Complete.svelte';
 	import { MIN_STUDY_WIDTH, MOCK_MODEL, STUDY_ENABLED, activityRailEnabled } from './env';
 	import { parseProlificFromUrl } from './prolific';
+	import { TEXTBOOK_CHECKS } from './config';
+	import { installCheckNudge } from './nudge';
 	import {
 		phase,
 		unitIdx,
@@ -18,7 +20,9 @@
 		railActive,
 		textbookFurthest,
 		textbookTotal,
-		textbookStepId
+		textbookStepId,
+		checkAnswers,
+		checkNudges
 	} from './store';
 	import {
 		initSession,
@@ -94,12 +98,39 @@
 	function watchTextbook(): () => void {
 		textbookTotal.set(textPages.length);
 		let furthest = -1;
+		let lastIdx: number | null = null;
+		const closed = new Set<string>();
 
 		return textbookCurrentPage.subscribe((idx) => {
 			if (typeof idx !== 'number') return;
 			// Always publish position, even when paging backwards, so interactions
 			// are attributed to where the participant actually is.
 			textbookStepId.set(textPages[idx]?.id ?? null);
+
+			// Close out the page being left, but only if it carried a check —
+			// otherwise `step_completed` would just duplicate `step_started` for the
+			// eleven pages that ask nothing. Emitted once per page, so paging back
+			// and forth does not inflate the counts.
+			const leftId = lastIdx === null ? null : (textPages[lastIdx]?.id ?? null);
+			if (
+				leftId &&
+				idx !== lastIdx &&
+				TEXTBOOK_CHECKS[leftId] &&
+				!closed.has(leftId) &&
+				get(phase) === 'running'
+			) {
+				closed.add(leftId);
+				const answer = get(checkAnswers)[leftId];
+				track('step_completed', leftId, {
+					surface: 'te_textbook',
+					answered_check: Boolean(answer),
+					check_correct: answer?.correct ?? null,
+					// Nudged but never answered is a deliberate skip, and is the thing
+					// worth counting separately from a page that asked nothing.
+					nudged: Boolean(get(checkNudges)[leftId])
+				});
+			}
+			lastIdx = idx;
 
 			if (idx <= furthest) return;
 			furthest = idx;
@@ -150,6 +181,9 @@
 			cleanups.push(installUnloadFlush());
 			cleanups.push(watchModelRuns());
 			cleanups.push(watchTextbook());
+			// Nudge-once-then-allow on TE's forward arrow. Harmless when the rail
+			// is on: those pages carry no TEXTBOOK_CHECKS entry, so it never fires.
+			cleanups.push(installCheckNudge());
 
 			// Resume mid-study rather than restarting on a refresh.
 			const resumedIdx = readResumeUnitIdx();

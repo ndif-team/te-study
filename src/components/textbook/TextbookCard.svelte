@@ -4,6 +4,7 @@
 	import { textbookCurrentPage } from '~/store';
 	import { textPages } from '~/utils/textbookPages';
 	import TextbookNavigation from './TextbookNavigation.svelte';
+	import TextbookCheck from '~/study/TextbookCheck.svelte';
 
 	export let onClose: () => void;
 
@@ -271,6 +272,19 @@
 									<svelte:component this={page.component} />
 								{:else if page.content}
 									{@html page.content}
+								{/if}
+								<!--
+									Study wrapper: renders nothing on pages without a check.
+
+									Guarded on `active` rather than rendered for every slide. Inactive
+									slides are hidden with `opacity: 0`, NOT `display: none`, and all
+									of them are absolutely positioned at the same coordinates — so
+									every slide's controls would stack on top of the visible one and
+									the last slide would swallow the clicks. Upstream never hits this
+									because its slides are pure prose with nothing to click.
+								-->
+								{#if $textbookCurrentPage === index}
+									<TextbookCheck pageId={page.id} />
 								{/if}
 							</div>
 						</div>

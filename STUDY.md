@@ -11,6 +11,9 @@ Everything below is verified locally. Nothing has been pushed, and no hosted ser
 | Path                                          | What                                                                               |
 | --------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `src/study/config.ts`                         | **Study content. The only file you need to edit to change what participants see.** |
+| `src/study/TextbookCheck.svelte`              | The check UI, rendered inside TE's own textbook card                               |
+| `src/study/checks.ts`                         | Grading rules (rank-0/rank-N tokens, token counts), unit-tested without a browser  |
+| `src/study/nudge.ts`                          | Nudge-once-then-allow guard on TE's forward arrow                                  |
 | `src/study/StudyShell.svelte`                 | Orchestrator: identity, telemetry hooks, phase machine                             |
 | `src/study/{Gate,StudyPanel,Complete}.svelte` | Intro/desktop gate, the activity rail, the Qualtrics handoff                       |
 | `src/study/telemetry.ts`                      | Anonymous Supabase auth + append-only event queue                                  |
@@ -153,6 +156,63 @@ order by s.prolific_pid, e.created_at;
 `event_type` uses the **same verbs as the Workbench arm's `tutorial_events`** (`step_started`, `step_completed`, `check_answered`, `hint_shown`) so the arms union in the analysis, plus TE-specific `landed`, `model_ready`, `prompt_run`, `interaction`, `study_completed`.
 
 Join across arms on `prolific_pid` — that is also the Qualtrics key.
+
+---
+
+## Engagement checks on TE's textbook
+
+Nine of TE's twenty pages carry a question, defined in `TEXTBOOK_CHECKS` in
+`config.ts` (**stub wording — needs Gwen's pass**, like `STUDY_UNITS`). They are
+the TE-arm counterpart to Patch Lens's per-block checks.
+
+| Page | Asks | Graded against |
+|---|---|---|
+| `how-transformers-work` | most likely next token | live rank 0 |
+| `embedding` | how many tokens their text is | live `tokens.length` |
+| `blocks` | how many blocks | fixed (12) |
+| `multi-head` | how many heads | fixed (12) |
+| `masked-self-attention` | can the first token see the last | fixed (no) |
+| `output-logit` | what a higher logit means | fixed |
+| `output-probabilities` | **second** most likely token | live rank 1 |
+| `temperature` | effect of lowering it | fixed, + records live `temperature` |
+| `sampling` | is top-k=1 repeatable | fixed (yes) |
+
+Three are graded against live model state, so they cannot be answered from the
+page text — those are the real engagement evidence. The `temperature` one is a
+manipulation check: the live slider value is recorded with the answer, so
+someone who moved it is distinguishable from someone who guessed.
+
+**Answering is nudged, never required.** The first press of TE's forward arrow
+on an unanswered check is swallowed and a prompt appears; the second press goes
+through. Gating on checks is what drives Prolific dropout, and this arm has
+already lost one pilot to a blocking control.
+
+**Analysis:** `check_answered` carries `correct`, `expected`, and for the live
+kinds the raw model state it was graded against, so answers can be re-graded if
+a grading rule turns out to be wrong. `step_completed` is emitted **only for the
+nine pages with checks**, carrying `answered_check` / `check_correct` / `nudged`
+— nudged-but-never-answered is a deliberate skip. The other eleven pages emit
+`step_started` only, so a "completed" count means something.
+
+**The determinism rule is enforced, not just documented.** A unit test rejects
+question wording that asks what the model "said" or "output" — TE samples, so
+that has no stable answer and would mark participants wrong at random. Ask what
+it *ranks most likely* instead.
+
+### Two upstream latent bugs this surfaced
+
+Both were harmless until a textbook page contained something clickable:
+
+- **Inactive slides intercept clicks.** All 20 slides sit at the same absolute
+  position, hidden with `opacity: 0` — which still hit-tests. The topmost
+  inactive slide's text swallowed every click meant for the active one. Fixed
+  with `pointer-events: none` on inactive slides.
+- **The nav footer overlays the card.** It is `position: absolute; bottom: 0` at
+  3rem, while `.text-carousel` reserves only 2rem of padding. Upstream's pages
+  end in prose so the 1rem overlap never mattered; ours end in a button.
+
+Checks are also rendered only for the active slide, for the same stacking
+reason. If you add a check to a page, none of this needs redoing.
 
 ---
 

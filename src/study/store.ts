@@ -15,8 +15,21 @@ export const unitIdx = writable(0);
 export const prolificParams = writable<ProlificParams | null>(null);
 export const telemetryReady = writable(false);
 
-/** Answers given so far, keyed by unit id — drives the "answered" UI state. */
+/**
+ * Answers given so far, keyed by unit id (activity rail) or by TE textbook page
+ * id (default path) — drives the "answered" UI state.
+ */
 export const checkAnswers = writable<Record<string, { answer: string; correct: boolean }>>({});
+
+/**
+ * Pages where the participant has already been nudged to answer before moving
+ * on. The nudge fires once per page: the first forward press is intercepted,
+ * the second goes through. Answering is therefore encouraged but never
+ * required, which is the point — a hard gate on checks drives Prolific dropout
+ * (prolific-tutorial-design-spec.md §4.7), and this arm has already lost one
+ * pilot to a blocking control.
+ */
+export const checkNudges = writable<Record<string, boolean>>({});
 
 /** Whether our own activity rail is mounted this visit (see env.activityRailEnabled). */
 export const railActive = writable(false);
