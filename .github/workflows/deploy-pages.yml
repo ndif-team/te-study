@@ -77,9 +77,20 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # Must exceed the action's own `timeout` below, or the job is killed first
+    # and the action never gets to report why.
+    timeout-minutes: 40
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # The artifact is ~688 MB, almost all of it ONNX weights, and GitHub's
+          # side of the deploy regularly runs past the action's 10-minute
+          # default — it timed out on f274ba0 with the deployment still
+          # in_progress, having built and uploaded fine. This is the warm
+          # standby, so a slow publish is not urgent, but a red X on every push
+          # trains everyone to ignore the one that matters.
+          timeout: 1800000

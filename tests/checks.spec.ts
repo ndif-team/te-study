@@ -53,11 +53,20 @@ test.describe('embedded checks', () => {
 			`Step ${firstChoiceIdx + 2} of ${STUDY_UNITS.length}`
 		);
 
+		// Wait for BOTH events, not just check_answered. Telemetry flushes on a
+		// 400ms debounce, and the gap between answering and advancing is wide
+		// enough on a slow runner for the flush to fire in between — so the two
+		// events land in different batches. Polling for one and then asserting on
+		// the other passed locally and failed on CI, which is the signature of a
+		// wait condition that does not cover the assertion.
 		const events = await waitForEvents(
 			pid,
-			(e) => e.some((x) => x.event_type === 'check_answered' && x.step_id === unit.id),
-			'expected a check_answered event'
+			(e) =>
+				e.some((x) => x.event_type === 'check_answered' && x.step_id === unit.id) &&
+				e.some((x) => x.event_type === 'step_completed' && x.step_id === unit.id),
+			'expected both check_answered and step_completed for this unit'
 		);
+
 		const answered = events.find(
 			(e) => e.event_type === 'check_answered' && e.step_id === unit.id
 		)!;
