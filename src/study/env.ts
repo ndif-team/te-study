@@ -65,10 +65,36 @@ export function activityRailEnabled(search?: URLSearchParams): boolean {
 }
 
 /**
- * Below this width the study is refused. Transformer Explainer sets its own
- * `minScreenWidth = 1300` in +layout.svelte and lays out horizontally below
- * that, so anything narrower is unusable regardless of our panel.
+ * Below this width the study is refused.
+ *
+ * This was 1300, copied from Transformer Explainer's own `minScreenWidth` in
+ * +layout.svelte on the assumption that anything narrower was unusable. That
+ * assumption was wrong, and it cost us real participants — the pilot turned
+ * away viewports of 1241 and 1097, both ordinary laptops.
+ *
+ * TE's 1300 is a CSS `min-width` on `#app`, not a support floor. A narrower
+ * viewport does not break the layout; it scrolls horizontally. Upstream clearly
+ * intends that: `+layout.svelte` pins the topbar with
+ * `transform: translateX(-scrollLeft)` precisely so the header survives that
+ * scroll, and `isMobile` — TE's actual "you cannot use this" signal — is
+ * user-agent based and never consults width at all.
+ *
+ * So the gate should reject phones and slivers, not laptops. 1024 is the
+ * conventional tablet-landscape/small-laptop breakpoint and clears the 1097
+ * case with room to spare.
+ *
+ * Note 1100 would NOT have been enough: it still rejects a 1097 viewport by
+ * three pixels. Reported window widths are already shy of the nominal screen
+ * (scrollbars, OS chrome, zoom), so a threshold set just under an observed
+ * value will keep clipping people.
  */
-export const MIN_STUDY_WIDTH = 1300;
+export const MIN_STUDY_WIDTH = 1024;
+
+/**
+ * Between MIN_STUDY_WIDTH and TE's own 1300 the tool works but scrolls
+ * sideways. Participants get told that once, up front, rather than quietly
+ * discovering that part of the visualisation is off-screen.
+ */
+export const TE_COMFORTABLE_WIDTH = 1300;
 
 export const TELEMETRY_CONFIGURED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);

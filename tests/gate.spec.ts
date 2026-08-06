@@ -46,3 +46,46 @@ test.describe('wide viewport', () => {
 		await expect(page.getByTestId('study-blocked')).toBeHidden();
 	});
 });
+
+/**
+ * The pilot turned away viewports of 1097 and 1241 — both ordinary laptops —
+ * because MIN_STUDY_WIDTH was copied from TE's CSS `min-width` rather than from
+ * any real support floor. These pin the boundary to the widths we actually
+ * observed, so a future tightening has to fail a named case rather than
+ * silently shrink the eligible pool.
+ */
+for (const width of [1097, 1241]) {
+	test.describe(`observed pilot viewport ${width}`, () => {
+		test.use({ viewport: { width, height: 800 } });
+
+		test('is admitted rather than screened out', async ({ page }) => {
+			await page.goto(studyUrl(newPid(`gate-${width}`)));
+			await expect(page.getByTestId('study-intro')).toBeVisible();
+			await expect(page.getByTestId('study-blocked')).toBeHidden();
+		});
+
+		test('is warned that the layout will scroll sideways', async ({ page }) => {
+			await page.goto(studyUrl(newPid(`gate-narrow-${width}`)));
+			await expect(page.getByTestId('narrow-viewport')).toBeVisible();
+		});
+	});
+}
+
+test.describe('a phone-width viewport is still refused', () => {
+	test.use({ viewport: { width: 420, height: 900 } });
+
+	test('stays blocked', async ({ page }) => {
+		await page.goto(studyUrl(newPid('gate-phone')));
+		await expect(page.getByTestId('study-blocked')).toBeVisible();
+	});
+});
+
+test.describe('a comfortably wide viewport gets no scroll warning', () => {
+	test.use({ viewport: { width: 1600, height: 900 } });
+
+	test('shows the intro without the narrow-viewport note', async ({ page }) => {
+		await page.goto(studyUrl(newPid('gate-wide')));
+		await expect(page.getByTestId('study-intro')).toBeVisible();
+		await expect(page.getByTestId('narrow-viewport')).toBeHidden();
+	});
+});

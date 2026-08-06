@@ -148,6 +148,22 @@ Join across arms on `prolific_pid` — that is also the Qualtrics key.
 
 ---
 
+## Pilot post-mortem: two self-inflicted screens (fixed 2026-08-06)
+
+The first pilot lost a large share of arrivals before `model_ready` ever fired. Both causes were in the wrapper, not in TE.
+
+**1. Begin was disabled until all 627 MB arrived.** Participants sat on a dead button for minutes. Upstream TE is built for exactly this wait and we were suppressing all of it: `runModelOrCache` renders full, real visualisations from five bundled examples while weights stream; `InputForm` disables only the *custom text* box and captions it "Try the examples while GPT-2 model is being downloaded (600MB)"; textbook page 2 says "If the model isn't ready yet, try another Example" and points at the example selector; and choosing an example during the fetch *completes that textbook page*, so study progress genuinely advances mid-download.
+
+Begin is now always enabled. The custom-prompt hazard this originally guarded against — typing your own prompt during the fetch would display a *different* prompt's data, because `fakeRunWithCachedData` overwrites `tokens` — is already handled upstream, since the text input is disabled and only the curated examples (whose cached data matches) are reachable.
+
+**2. `MIN_STUDY_WIDTH` was 1300, and rejected real laptops.** The pilot turned away viewports of 1097 and 1241. TE's 1300 is a CSS `min-width` on `#app`, not a support floor — narrower windows scroll horizontally rather than break, and upstream pins the topbar with `translateX(-scrollLeft)` precisely to support that. TE's actual "you cannot use this" signal, `isMobile`, is user-agent based and never consults width.
+
+Now 1024, with a one-line heads-up about sideways scrolling shown between 1024 and 1300. `tests/gate.spec.ts` pins both observed pilot widths as must-admit cases. Note 1100 would *not* have been sufficient — it still rejects 1097 by three pixels.
+
+**Both bear on the writeup:** that pilot dropout is an artefact of this wrapper, not a property of Transformer Explainer, and must not be reported as an arm difference. `scripts/dropout-analysis.sh` prints the funnel and the load-time distribution; run it again after the next wave to confirm the fix. `study_begun.model_loading` is the direct measure — it records whether each participant started before the weights landed.
+
+---
+
 ## Three findings that affect the study, not just the code
 
 ### 1. Transformer Explainer samples. It does not decode greedily.
@@ -192,7 +208,8 @@ Verified 2026-08-04 against the real GPT-2:
 
 - **Content is stubbed.** `config.ts` has a working 7-unit structure adapted from `slides/02b-arm-transformer-explainer.md`, but the wording, callouts and check answers need Gwen's pass. It is the only file to edit; `npm run test:unit` enforces the ≤11-word prompt limit and unit-count parity.
 - **Unit 4 is deliberately unmatched.** Workbench's u4 is activation patching; TE has no intervention capability. Faking one would destroy the contrast the study exists to measure, so TE's u4 is its deepest architecture unit instead. Say so in the methods section.
-- **657 MB model download per first-time participant.** ~33 GB at N≈50 — inside Pages' 100 GB/month soft limit, but a multi-minute wait on a slow connection. The intro screen deliberately covers it and `model_ready.load_ms` is logged so slow-load dropouts are separable from disengagement. If it bites, move `static/model-v2/` to R2 and repoint the chunk base URL.
-- **The rail overlays TE at laptop widths.** TE needs 1300px; the rail is 352px. Below ~1650px it covers TE's bottom navigation, so the rail has a collapse control. Worth watching in the team run-through at 1440px.
+- **627 MB model download per first-time participant.** ~31 GB at N≈50 — inside Pages' 100 GB/month soft limit, but a multi-minute wait on a slow connection. Participants are no longer held behind it (see below); `model_ready.load_ms` and `study_begun.model_loading` are logged so slow loads stay separable from disengagement. If it still bites, the next levers are a bounded-concurrency streaming rewrite of `fetchChunks` (see below), then fp16 weights, then moving `static/model-v2/` to R2.
+- **The rail overlays TE at laptop widths.** TE needs 1300px; the rail is 352px. Below ~1650px it covers TE's bottom navigation, so the rail has a collapse control. The rail is off by default, so this only matters if `?rail=1` is used. Worth watching in the team run-through at 1440px.
+- **`fetchChunks` has no progress data and fetches all 63 chunks at once.** `isFetchingModel` is a boolean, and `Promise.all` + `response.arrayBuffer()` means there is no byte-level progress; per-chunk completions also cluster at the end, so a naive n/63 bar would sit near zero and then jump. A real progress bar needs `response.body.getReader()` with concurrency capped around 6 — which would likely shorten the download too, since 63 parallel streams mostly compete with each other. Not done.
 - **Content-risk owner** (tutorial spec §6, listed as blocking launch) applies to this arm too in units 5–6, though GPT-2 is far less capable than the Workbench arm's model.
 - **`user_metadata` is participant-editable.** `te_sessions` is the authoritative copy (insert-only under RLS); reconcile against Prolific's export before analysis.

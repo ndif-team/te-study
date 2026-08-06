@@ -1,19 +1,51 @@
 <script lang="ts">
 	import { isFetchingModel } from '~/store';
-	import { MOCK_MODEL, MIN_STUDY_WIDTH } from './env';
+	import { MOCK_MODEL, MIN_STUDY_WIDTH, TE_COMFORTABLE_WIDTH } from './env';
 	import { phase, unitIdx, telemetryReady, railActive, textbookTotal } from './store';
 	import { STUDY_UNITS } from './config';
 	import { track } from './telemetry';
 
 	/**
-	 * The model download is ~657 MB and starts immediately on mount, so this
+	 * The model download is ~627 MB and starts immediately on mount, so this
 	 * screen exists as much to give it cover as to inform: the participant reads
 	 * while the weights stream in. `model_ready` duration is logged so a slow-load
 	 * dropout is identifiable in the analysis rather than looking like disengagement.
+	 *
+	 * Begin is deliberately NOT disabled while the model loads. It used to be, and
+	 * that was the single biggest source of pilot dropout: most participants left
+	 * before `model_ready` ever fired, sitting on a dead button.
+	 *
+	 * Upstream TE is built for exactly this wait and we were suppressing all of it:
+	 *
+	 *   - `runModelOrCache` renders full, real visualisations from five bundled
+	 *     examples (`ex0`-`ex4`) while the weights stream.
+	 *   - `InputForm` already disables only the *custom text* input during the
+	 *     fetch, keeps the example selector live, and captions it "Try the
+	 *     examples while GPT-2 model is being downloaded (600MB)".
+	 *   - Textbook page 2 says "If the model isn't ready yet, try another Example"
+	 *     and points its cursor at the example selector rather than Generate.
+	 *   - Picking an example during the fetch completes that textbook page, so
+	 *     study progress genuinely advances before the download finishes.
+	 *
+	 * So the custom-prompt hazard (typing your own prompt during the fetch would
+	 * show a *different* prompt's data, because `fakeRunWithCachedData` overwrites
+	 * `tokens`) is already handled upstream — the input is disabled, and only the
+	 * curated examples, whose cached data matches, are reachable.
 	 */
 	$: modelLoading = MOCK_MODEL ? false : $isFetchingModel;
 
+	// Usable but narrower than TE's 1300px layout, so the page will scroll
+	// sideways. Say so once here rather than let them find it mid-task.
+	let narrowViewport = false;
+	if (typeof window !== 'undefined') {
+		narrowViewport =
+			window.innerWidth >= MIN_STUDY_WIDTH && window.innerWidth < TE_COMFORTABLE_WIDTH;
+	}
+
 	const begin = () => {
+		// Whether participants actually start before the weights land is the
+		// measure of whether removing the gate worked. Pair with `model_ready`.
+		track('study_begun', null, { model_loading: modelLoading });
 		phase.set('running');
 		// Only our own rail emits unit-level step events. With the rail off,
 		// progress is tracked through TE's textbook in StudyShell instead.
@@ -70,16 +102,24 @@
 				watch the mechanism, not to judge the answers.
 			</p>
 
-			{#if modelLoading}
-				<p class="st-loading" data-testid="model-loading">
-					Loading the model into your browser… this can take a minute or two on a slower connection.
-					You can start reading — the button will enable when it is ready.
+			{#if narrowViewport}
+				<p class="st-muted" data-testid="narrow-viewport">
+					Your window is a little narrower than the visualisation, so you may need to scroll
+					sideways to see all of it. Maximising the window, or hiding your browser's bookmarks
+					bar, will help.
 				</p>
 			{/if}
 
-			<button data-testid="begin-study" disabled={modelLoading} on:click={begin}>
-				{modelLoading ? 'Loading…' : 'Begin'}
-			</button>
+			{#if modelLoading}
+				<p class="st-loading" data-testid="model-loading">
+					GPT-2 is downloading in the background (about 600 MB). <strong
+						>You do not need to wait for it.</strong
+					> Begin now — the walkthrough starts with built-in example prompts that work straight away.
+					The box for typing your own prompts switches on by itself when the download finishes.
+				</p>
+			{/if}
+
+			<button data-testid="begin-study" on:click={begin}>Begin</button>
 
 			{#if !$telemetryReady}
 				<p class="st-warn" data-testid="telemetry-warning">

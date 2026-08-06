@@ -26,6 +26,7 @@ export type StudyEventType =
 	| 'hint_shown'
 	// TE-arm additions
 	| 'landed'
+	| 'study_begun'
 	| 'model_ready'
 	| 'prompt_run'
 	| 'interaction'
