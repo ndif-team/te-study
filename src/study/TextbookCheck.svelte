@@ -134,13 +134,12 @@
 		font-size: 0.85rem;
 		line-height: 1.45;
 		/*
-		 * Clear TE's navigation footer, which is `position: absolute; bottom: 0`
-		 * at 3rem tall over the card while `.text-carousel` only reserves 2rem of
-		 * padding. Upstream never notices the 1rem overlap because its pages end
-		 * in prose; ours end in a radio group and a button, which the footer
-		 * would otherwise sit on top of and swallow the clicks for.
+		 * Clearing TE's navigation footer is handled by `.text-carousel`'s
+		 * padding-bottom in TextbookCard.svelte, so the whole scroll area stops
+		 * above the footer rather than each element having to dodge it. This is
+		 * just breathing room at the end of the page.
 		 */
-		margin-bottom: 3.5rem;
+		margin-bottom: 0.5rem;
 	}
 
 	/*

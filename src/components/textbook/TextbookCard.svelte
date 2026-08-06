@@ -333,7 +333,20 @@
 	.text-carousel {
 		position: relative;
 		height: 100%;
-		padding-bottom: 2rem;
+		/*
+		 * Must be at least the height of `.navigation-footer`, which is absolutely
+		 * positioned over the bottom of this card at 3rem plus its own padding
+		 * (~51px measured). At the original 2rem the last ~17px of scrollable
+		 * content sat UNDERNEATH the footer, and the footer has z-index 10 — so a
+		 * click there hit `.nav-section.left` and paged BACKWARDS instead of
+		 * reaching the content.
+		 *
+		 * Upstream never sees this because its pages end in prose, where a dead
+		 * strip at the bottom is invisible. Our pages end in an Answer button:
+		 * pressing it jumped to the previous page and silently discarded the
+		 * answer.
+		 */
+		padding-bottom: 3.5rem;
 
 		.carousel-content {
 			position: relative;

@@ -131,6 +131,64 @@ test.describe('textbook engagement checks', () => {
 		expect(done.payload.check_correct).toBeNull();
 	});
 
+	test('the check area never sits underneath TE’s nav footer', async ({ page }) => {
+		/*
+		 * The bug this pins: `.text-carousel` reserved 2rem of bottom padding while
+		 * `.navigation-footer` is absolutely positioned over the card at ~51px with
+		 * z-index 10. The last ~17px of scrollable content therefore sat UNDER the
+		 * footer, and the Answer button falls in the footer's LEFT half — so
+		 * pressing it fired `navigatePage('prev')`, jumping back a page and
+		 * silently discarding the answer.
+		 *
+		 * Asserted geometrically rather than by clicking, because the click path
+		 * depends on scroll position: Playwright's auto-scroll happened to place
+		 * the button clear of the footer, which is exactly why the other tests in
+		 * this file passed while the bug was live.
+		 */
+		await page.goto(plainUrl(newPid('chk-geometry')));
+		await beginPlain(page);
+		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+
+		const box = await page.evaluate(() => {
+			const content = document.querySelector(
+				'.carousel-slide.active .textbook-content'
+			) as HTMLElement;
+			const footer = document.querySelector('.navigation-footer') as HTMLElement;
+			return {
+				contentBottom: content.getBoundingClientRect().bottom,
+				footerTop: footer.getBoundingClientRect().top
+			};
+		});
+
+		expect(
+			box.contentBottom,
+			`scrollable content ends at ${box.contentBottom} but the nav footer starts at ` +
+				`${box.footerTop} — content under the footer is unclickable and pages backwards`
+		).toBeLessThanOrEqual(box.footerTop);
+	});
+
+	test('pressing Answer submits rather than paging backwards', async ({ page }) => {
+		// The functional half of the above: scroll the check fully into reach, as a
+		// participant would, then press Answer and confirm the page held still.
+		await page.goto(plainUrl(newPid('chk-noback')));
+		await beginPlain(page);
+		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+
+		await page.getByTestId('textbook-check').locator('input[type=radio]').first().check();
+		await page.evaluate(() => {
+			const content = document.querySelector(
+				'.carousel-slide.active .textbook-content'
+			) as HTMLElement;
+			content.scrollTop = content.scrollHeight;
+		});
+
+		const before = await currentPageNumber(page);
+		await page.getByTestId('check-submit').click();
+
+		await expect(page.getByTestId('check-feedback')).toBeVisible();
+		expect(await currentPageNumber(page), 'answering moved the textbook page').toBe(before);
+	});
+
 	test('pages without a check are not closed out, so counts stay meaningful', async ({ page }) => {
 		const pid = newPid('chk-nocount');
 		await page.goto(plainUrl(pid));
