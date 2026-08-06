@@ -87,10 +87,19 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
         with:
-          # The artifact is ~688 MB, almost all of it ONNX weights, and GitHub's
-          # side of the deploy regularly runs past the action's 10-minute
-          # default — it timed out on f274ba0 with the deployment still
-          # in_progress, having built and uploaded fine. This is the warm
-          # standby, so a slow publish is not urgent, but a red X on every push
-          # trains everyone to ignore the one that matters.
-          timeout: 1800000
+          # 600000 ms (10 min) is this action's HARD MAXIMUM, not its default:
+          # anything larger is silently clamped with
+          #   "timeout value is greater than the allowed maximum"
+          # and the run still aborts at 10 minutes. So this cannot be raised —
+          # it is set explicitly only to document that the ceiling was checked.
+          #
+          # The artifact is ~688 MB, and GitHub's publish step sometimes runs
+          # past the ceiling: 2026-08-06 timed out twice with the deployment
+          # still in_progress after building and uploading cleanly, while the
+          # same artifact published fine on 2026-08-05. Note the action CANCELS
+          # the deployment on timeout, so a failure here means Pages keeps
+          # serving the previous build rather than the one just pushed.
+          #
+          # If this becomes persistent rather than occasional, the fix is to
+          # stop shipping weights in the Pages artifact, not to tune timeouts.
+          timeout: 600000

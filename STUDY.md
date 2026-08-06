@@ -116,6 +116,14 @@ halfway through recruitment. Cloudflare does not meter static bandwidth.
 Cloudflare deploys by **direct upload** (`wrangler pages deploy`), not the Git
 integration, which would clone ~600 MB of model chunks on every build.
 
+**Check the standby is current before you rely on it.** `actions/deploy-pages`
+has a hard 10-minute ceiling that cannot be raised (larger values are silently
+clamped), and the ~688 MB artifact sometimes exceeds it — twice on 2026-08-06,
+having built and uploaded cleanly, after publishing fine the day before. On
+timeout the action *cancels* the deployment, so Pages silently keeps serving the
+**previous** build. A green Cloudflare run therefore does not imply the standby
+matches it. `gh run list --workflow=deploy-pages.yml` is the check.
+
 ### Switching to the standby
 
 Change the URL in the Prolific study. Nothing else moves — both hosts talk to
