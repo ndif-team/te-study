@@ -98,11 +98,23 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN secret is not set"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID secret is not set"; exit 1; }
 
-          if npx --yes wrangler@3 pages project list 2>/dev/null | grep -qw te-study; then
-            echo "project te-study already exists"
+          # Just try to create it and treat "already exists" as success, rather
+          # than asking `pages project list` first.
+          #
+          # The list-then-create form failed on 63a922b: `list` is a network call
+          # that can fail transiently, its stderr was sent to /dev/null, and an
+          # empty result is indistinguishable from "project absent" — so a blip
+          # made the step try to create a project that was already there and die
+          # with "A project with this name already exists" [code: 8000002].
+          # Deciding from the create call itself removes the ambiguity entirely.
+          out=$(npx --yes wrangler@3 pages project create te-study --production-branch=main 2>&1) && rc=0 || rc=$?
+          echo "$out"
+          if [ "$rc" -eq 0 ]; then
+            echo "created Pages project te-study"
+          elif printf '%s' "$out" | grep -q 'already exists'; then
+            echo "project te-study already exists — continuing"
           else
-            echo "creating Pages project te-study"
-            npx --yes wrangler@3 pages project create te-study --production-branch=main
+            echo "::error::could not ensure the Pages project exists"; exit "$rc"
           fi
 
       - name: Deploy to Cloudflare Pages
