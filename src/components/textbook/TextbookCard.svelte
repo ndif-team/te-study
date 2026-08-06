@@ -5,6 +5,7 @@
 	import { textPages } from '~/utils/textbookPages';
 	import TextbookNavigation from './TextbookNavigation.svelte';
 	import TextbookCheck from '~/study/TextbookCheck.svelte';
+	import TextbookFinish from '~/study/TextbookFinish.svelte';
 
 	export let onClose: () => void;
 
@@ -292,6 +293,8 @@
 				</div>
 
 				<TextbookNavigation {textPages} {isMouseInCard} {isLeftSide} />
+				<!-- Study wrapper: the exit, shown only on the final page. -->
+				<TextbookFinish />
 			</div>
 		</div>
 	</div>

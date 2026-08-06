@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { phase, textbookFurthest, textbookTotal, tutorialComplete } from './store';
-	import { track, saveResume } from './telemetry';
+	import { textbookFurthest, textbookTotal, tutorialComplete } from './store';
+	import { finishStudy } from './finish';
 
 	/**
 	 * The default study surface: a slim bar over an otherwise untouched
@@ -13,15 +13,7 @@
 	 */
 	$: page = Math.min($textbookFurthest + 1, $textbookTotal || 1);
 
-	const finish = () => {
-		track('study_completed', null, {
-			via: 'textbook_progress',
-			textbook_furthest: $textbookFurthest,
-			textbook_total: $textbookTotal
-		});
-		saveResume(0);
-		phase.set('complete');
-	};
+	const finish = () => finishStudy('finish_bar');
 </script>
 
 <div class="st-finishbar" data-testid="finish-bar">

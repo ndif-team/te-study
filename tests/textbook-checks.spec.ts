@@ -216,3 +216,60 @@ test.describe('textbook engagement checks', () => {
 		expect(spurious, 'check-less pages should not emit step_completed').toHaveLength(0);
 	});
 });
+
+test.describe('finishing from inside the textbook card', () => {
+	test('the exit appears in the card on the last page, and not before', async ({ page }) => {
+		await page.goto(plainUrl(newPid('fin-show')));
+		await beginPlain(page);
+
+		await gotoTextbookPage(page, PAGE_WITH_CHOICE);
+		await expect(page.getByTestId('textbook-finish')).toBeHidden();
+
+		const total = Number((await page.locator('.page-counter').innerText()).split('/')[1].trim());
+		await gotoTextbookPage(page, total - 1);
+		await expect(page.getByTestId('textbook-finish')).toBeVisible();
+	});
+
+	test('the forward arrow on the last page does NOT wrap back to page 1', async ({ page }) => {
+		/*
+		 * TE's navigatePage('next') sets the index to 0 at the end rather than
+		 * stopping, so pressing next once more silently restarted the walkthrough.
+		 * Because progress is tracked as `furthest`, the exit stayed unlocked — so
+		 * the participant was returned to page 1 of a tutorial they had finished,
+		 * with no explanation.
+		 */
+		await page.goto(plainUrl(newPid('fin-nowrap')));
+		await beginPlain(page);
+
+		const total = Number((await page.locator('.page-counter').innerText()).split('/')[1].trim());
+		await gotoTextbookPage(page, total - 1);
+		expect(await currentPageNumber(page)).toBe(total);
+
+		await forwardArrow(page).click();
+		await forwardArrow(page).click();
+
+		expect(await currentPageNumber(page), 'the forward arrow wrapped to the start').toBe(total);
+		await expect(page.getByTestId('textbook-finish')).toBeVisible();
+	});
+
+	test('the in-card exit hands off to Qualtrics and records which surface was used', async ({
+		page
+	}) => {
+		const pid = newPid('fin-handoff');
+		await page.goto(plainUrl(pid));
+		await beginPlain(page);
+
+		const total = Number((await page.locator('.page-counter').innerText()).split('/')[1].trim());
+		await gotoTextbookPage(page, total - 1);
+		await page.getByTestId('textbook-finish-button').click();
+
+		const events = await waitForEvents(
+			pid,
+			(e) => e.some((x) => x.event_type === 'study_completed'),
+			'expected study_completed from the in-card exit'
+		);
+		const done = events.find((e) => e.event_type === 'study_completed')!;
+		expect(done.payload.surface).toBe('textbook_card');
+		expect(done.payload.via).toBe('textbook_progress');
+	});
+});

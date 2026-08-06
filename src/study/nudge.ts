@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
-import { textbookCurrentPageId } from '~/store';
+import { textbookCurrentPage, textbookCurrentPageId } from '~/store';
 import { TEXTBOOK_CHECKS } from './config';
-import { checkAnswers, checkNudges } from './store';
+import { checkAnswers, checkNudges, textbookTotal } from './store';
 import { track } from './telemetry';
 
 /**
@@ -33,6 +33,19 @@ export function installCheckNudge(): () => void {
 		const target = event.target as HTMLElement | null;
 		// `.nav-section.right` is TE's forward-arrow hit area.
 		if (!target?.closest?.('.nav-section.right')) return;
+
+		// TE's forward arrow WRAPS: navigatePage('next') on the last page sets the
+		// index to 0, silently restarting the walkthrough at page 1. A participant
+		// who finished and pressed next once more would find themselves back at the
+		// beginning with no idea why, and `textbookFurthest` means the exit stays
+		// unlocked — so they would be lost in a tutorial they had already completed.
+		// Swallow it; TextbookFinish is showing the way out right above the arrow.
+		const total = get(textbookTotal);
+		if (total > 0 && get(textbookCurrentPage) >= total - 1) {
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
 
 		const pageId = get(textbookCurrentPageId);
 		if (!pageId) return;
