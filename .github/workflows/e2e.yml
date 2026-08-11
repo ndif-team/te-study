@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Needed because push triggers can be lost. During the 2026-08-06 Actions
+  # degradation four consecutive pushes to main queued nothing at all, and
+  # GitHub never retried — 4da42e4 sat undeployed and untested for five days
+  # while `git log` and the run list both looked unremarkable. Without this
+  # there is no way to run the suite against main by hand.
+  workflow_dispatch:
 
 jobs:
   test:

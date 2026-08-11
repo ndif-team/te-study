@@ -119,6 +119,28 @@ halfway through recruitment. Cloudflare does not meter static bandwidth.
 Cloudflare deploys by **direct upload** (`wrangler pages deploy`), not the Git
 integration, which would clone ~600 MB of model chunks on every build.
 
+**A push does not guarantee a deploy.** During the 2026-08-06 Actions
+degradation, four consecutive pushes to `main` queued *no workflow runs at all*,
+and GitHub never retried them. Nothing looked wrong: the commits were on
+`main`, and the run list simply had no entry to be red. `4da42e4` sat
+undeployed for five days. So after pushing anything that matters, confirm a run
+actually exists for that SHA:
+
+```bash
+gh run list --repo ndif-team/te-study --limit 5 \
+  --json headSha,name,conclusion --jq '.[]|"\(.headSha[0:7]) \(.name) \(.conclusion)"'
+```
+
+If there is no entry for your commit, re-trigger by hand — every workflow now
+accepts `workflow_dispatch`:
+
+```bash
+gh workflow run deploy-cloudflare.yml --repo ndif-team/te-study --ref main
+gh workflow run e2e.yml              --repo ndif-team/te-study --ref main
+```
+
+Or use `scripts/deploy-local.sh`, which does not depend on Actions at all.
+
 **Check the standby is current before you rely on it.** `actions/deploy-pages`
 has a hard 10-minute ceiling that cannot be raised (larger values are silently
 clamped), and the ~688 MB artifact sometimes exceeds it — twice on 2026-08-06,
