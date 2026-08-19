@@ -19,7 +19,7 @@ export const telemetryReady = writable(false);
  * Answers given so far, keyed by unit id (activity rail) or by TE textbook page
  * id (default path) — drives the "answered" UI state.
  */
-export const checkAnswers = writable<Record<string, { answer: string; correct: boolean }>>({});
+export const checkAnswers = writable<Record<string, { answer: string }>>({});
 
 /**
  * Pages where the participant has already been nudged to answer before moving

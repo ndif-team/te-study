@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TEXTBOOK_CHECKS } from '../config';
-import { gradeCheck, normalise, tokenAtRank } from '../checks';
+import { expectationFor, isReady, tokenAtRank } from '../checks';
 
 /**
  * `textbookPages.ts` imports Svelte components and TE's animation helpers, so it
@@ -60,30 +60,34 @@ describe('textbook check wiring', () => {
 	});
 });
 
-describe('grading', () => {
+describe('recording, not grading', () => {
 	const probs = [
 		{ rank: 0, token: ' Paris' },
 		{ rank: 1, token: ' France' }
 	];
 
-	it('grades a top-token check against rank 0, not the sampled token', () => {
-		const check = TEXTBOOK_CHECKS['how-transformers-work'];
-		expect(gradeCheck(check, { text: 'Paris' }, { probabilities: probs })).toMatchObject({
-			correct: true,
-			expected: ' Paris'
-		});
-		expect(gradeCheck(check, { text: 'France' }, { probabilities: probs })?.correct).toBe(false);
+	/*
+	 * The point of the whole module. Wave 2 told a participant their correct
+	 * answer was wrong, on screen, and that verdict could not be taken back.
+	 * Correctness is now decided in analysis, where it can be corrected.
+	 */
+	it('exposes no way to decide whether an answer is right', async () => {
+		const mod = await import('../checks');
+		expect(Object.keys(mod).sort()).toEqual(['expectationFor', 'isReady', 'tokenAtRank']);
 	});
 
-	it('grades a rank-1 check against the runner-up', () => {
-		const check = TEXTBOOK_CHECKS['output-probabilities'];
-		expect(gradeCheck(check, { text: 'France' }, { probabilities: probs })?.correct).toBe(true);
-		expect(gradeCheck(check, { text: 'Paris' }, { probabilities: probs })?.correct).toBe(false);
+	it('records the rank-0 token, not the sampled one', () => {
+		// TE samples, so `predictedToken` varies between runs of the same prompt.
+		// What is recorded must not.
+		expect(expectationFor(TEXTBOOK_CHECKS['how-transformers-work'], { probabilities: probs })).toBe(
+			' Paris'
+		);
 	});
 
-	it('forgives the leading space GPT-2 tokens carry, and case', () => {
-		expect(normalise(' Paris')).toBe('paris');
-		expect(normalise('paris.')).toBe('paris');
+	it('records the runner-up for a rank-1 check', () => {
+		expect(expectationFor(TEXTBOOK_CHECKS['output-probabilities'], { probabilities: probs })).toBe(
+			' France'
+		);
 	});
 
 	it('reads by rank rather than array position', () => {
@@ -94,83 +98,40 @@ describe('grading', () => {
 		expect(tokenAtRank({ probabilities: reversed }, 0)).toBe(' Paris');
 	});
 
-	it('grades token-count against the live tokenisation', () => {
-		const check = TEXTBOOK_CHECKS['embedding'];
+	it('records the live token count', () => {
 		const state = { tokens: ['The', ' Eiffel', ' Tower', ' is'] };
-		expect(gradeCheck(check, { text: '4' }, state)?.correct).toBe(true);
-		expect(gradeCheck(check, { text: '3' }, state)?.correct).toBe(false);
+		expect(expectationFor(TEXTBOOK_CHECKS['embedding'], state)).toBe('4');
 	});
 
-	it('refuses to grade before the model has produced anything', () => {
-		// Otherwise an eager click records a wrong answer the participant never
-		// had a chance to get right.
-		expect(gradeCheck(TEXTBOOK_CHECKS['how-transformers-work'], { text: 'Paris' }, {})).toBeNull();
-		expect(gradeCheck(TEXTBOOK_CHECKS['embedding'], { text: '4' }, {})).toBeNull();
+	it('records the configured option for a choice check', () => {
+		// Stable, but recorded the same way so analysis has one rule per kind and
+		// need not re-read a config that may since have moved.
+		const check = TEXTBOOK_CHECKS['blocks'];
+		expect(expectationFor(check, {})).toBe(check.kind === 'choice' ? check.options[1] : null);
 	});
 
-	/*
-	 * Both of these are regressions from wave 2 (2026-08-13), graded from the
-	 * `expected` values the telemetry recorded. Kept as literal reproductions so
-	 * a future rewrite of `normalise` cannot quietly reintroduce either.
-	 */
-	describe('wave-2 grading defects', () => {
-		it('does not accept any punctuation for a punctuation token', () => {
-			// A real rank-1 expected token was ',' -- and normalise(',') is ''. So was
-			// normalise('?'), which made a shrug score correct.
-			const punct = [
-				{ rank: 0, token: ' the' },
-				{ rank: 1, token: ',' }
-			];
-			const check = TEXTBOOK_CHECKS['output-probabilities'];
-			expect(gradeCheck(check, { text: '?' }, { probabilities: punct })?.correct).toBe(false);
-			expect(gradeCheck(check, { text: '!!' }, { probabilities: punct })?.correct).toBe(false);
-			expect(gradeCheck(check, { text: 'the' }, { probabilities: punct })?.correct).toBe(false);
-			// ...but the comma itself still counts.
-			expect(gradeCheck(check, { text: ',' }, { probabilities: punct })?.correct).toBe(true);
-		});
+	it('is not ready before the model has produced anything', () => {
+		// Keeps the submit control inert, so an eager click cannot record an answer
+		// with nothing to interpret it against.
+		expect(isReady(TEXTBOOK_CHECKS['how-transformers-work'], {})).toBe(false);
+		expect(isReady(TEXTBOOK_CHECKS['embedding'], {})).toBe(false);
+		expect(expectationFor(TEXTBOOK_CHECKS['how-transformers-work'], {})).toBeNull();
+	});
 
-		it("grades through the 'unset ' prefix, on both free-text kinds", () => {
-			// One participant submitted 'unset create' against an expected ' create'
-			// and was marked wrong, while their 'unset 6' on a token-count check was
-			// marked right. Same artefact, opposite outcomes.
-			const state = {
+	it('is ready for a choice check immediately', () => {
+		expect(isReady(TEXTBOOK_CHECKS['blocks'], {})).toBe(true);
+	});
+
+	it('records a punctuation token as itself', () => {
+		// The old normaliser reduced ',' to '' and then matched any punctuation
+		// against it. Recording it verbatim leaves that decision to analysis.
+		expect(
+			expectationFor(TEXTBOOK_CHECKS['output-probabilities'], {
 				probabilities: [
 					{ rank: 0, token: ' the' },
-					{ rank: 1, token: ' create' }
+					{ rank: 1, token: ',' }
 				]
-			};
-			expect(
-				gradeCheck(TEXTBOOK_CHECKS['output-probabilities'], { text: 'unset create' }, state)
-			).toMatchObject({ correct: true, expected: ' create' });
-
-			const counted = { tokens: ['a', 'b', 'c', 'd', 'e', 'f'] };
-			expect(gradeCheck(TEXTBOOK_CHECKS['embedding'], { text: 'unset 6' }, counted)?.correct).toBe(
-				true
-			);
-		});
-
-		it('still refuses a wrong answer carrying a stray prefix', () => {
-			// The fallback must not become "contains the right token somewhere".
-			const state = { probabilities: [{ rank: 0, token: ' Paris' }] };
-			const check = TEXTBOOK_CHECKS['how-transformers-work'];
-			expect(gradeCheck(check, { text: 'unset France' }, state)?.correct).toBe(false);
-			expect(gradeCheck(check, { text: 'Paris or France' }, state)?.correct).toBe(false);
-		});
-
-		it('reads the token count from the last word, not every digit in the field', () => {
-			const state = { tokens: ['a', 'b', 'c', 'd', 'e', 'f'] };
-			const check = TEXTBOOK_CHECKS['embedding'];
-			expect(gradeCheck(check, { text: 'about 6' }, state)?.correct).toBe(true);
-			// Was 16 when all digits were concatenated.
-			expect(gradeCheck(check, { text: '1st guess 6' }, state)?.correct).toBe(true);
-			expect(gradeCheck(check, { text: 'no idea' }, state)?.correct).toBe(false);
-		});
-	});
-
-	it('refuses to grade an empty answer', () => {
-		expect(
-			gradeCheck(TEXTBOOK_CHECKS['how-transformers-work'], { text: '  ' }, { probabilities: probs })
-		).toBeNull();
-		expect(gradeCheck(TEXTBOOK_CHECKS['blocks'], { choice: null }, {})).toBeNull();
+			})
+		).toBe(',');
 	});
 });

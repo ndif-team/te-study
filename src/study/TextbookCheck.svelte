@@ -2,7 +2,7 @@
 	import { onDestroy } from 'svelte';
 	import { modelData, tokens, predictedToken, temperature } from '~/store';
 	import { TEXTBOOK_CHECKS } from './config';
-	import { gradeCheck, tokenAtRank } from './checks';
+	import { expectationFor, isReady, tokenAtRank } from './checks';
 	import { checkAnswers, checkNudges, checkSeen } from './store';
 	import { track } from './telemetry';
 
@@ -77,25 +77,26 @@
 	onDestroy(() => observer?.disconnect());
 
 	$: live = { probabilities: $modelData?.probabilities ?? null, tokens: $tokens ?? null };
-	$: gradeable = check ? gradeCheck(check, { choice, text }, live) : null;
+	// Has an answer been given, and does the thing the question refers to exist
+	// yet? Not a grade -- nothing here decides whether the answer is right.
+	$: given = check?.kind === 'choice' ? choice !== null : Boolean(text.trim());
+	$: ready = Boolean(check) && given && isReady(check, live);
 
 	const submit = () => {
-		if (!check || answered) return;
-		const result = gradeCheck(check, { choice, text }, live);
-		if (!result) return;
+		if (!check || answered || !ready) return;
 
 		const answer = check.kind === 'choice' ? check.options[choice!] : text.trim();
-		checkAnswers.update((m) => ({ ...m, [pageId]: { answer, correct: result.correct } }));
+		checkAnswers.update((m) => ({ ...m, [pageId]: { answer } }));
 
 		track('check_answered', pageId, {
 			surface: 'te_textbook',
 			kind: check.kind,
 			answer,
-			correct: result.correct,
-			expected: result.expected,
-			// Recorded for the live kinds so an answer can be re-graded later if the
-			// grading rule turns out to be wrong — the raw model state is otherwise
-			// unrecoverable after the fact.
+			// What analysis will score this against. No verdict is formed here and
+			// none is shown to the participant.
+			expected: expectationFor(check, live),
+			// The raw model state, unrecoverable after the participant's next
+			// keystroke, so any scoring rule can be applied — or reapplied — later.
 			live_top_token: check.kind === 'top-token' ? tokenAtRank(live, 0) || null : undefined,
 			live_rank: check.kind === 'top-token' ? (check.rank ?? 0) : undefined,
 			// TE samples, so what it displayed may differ from what was graded. Kept
@@ -142,26 +143,21 @@
 		{/if}
 
 		{#if !answered}
-			<button
-				class="st-submit"
-				data-testid="check-submit"
-				disabled={!gradeable}
-				on:click={submit}
-			>
+			<button class="st-submit" data-testid="check-submit" disabled={!ready} on:click={submit}>
 				Answer
 			</button>
-			{#if !gradeable && (choice !== null || text.trim())}
-				<!-- The live kinds cannot be graded until the model has produced
-				     something, so say why the button is inert rather than leaving a
-				     dead control. -->
+			{#if !ready && given}
+				<!-- The live kinds have nothing to record against until the model has
+				     produced something, so say why the button is inert rather than
+				     leaving a dead control. -->
 				<span class="st-hint" data-testid="check-not-ready">Run the model first.</span>
 			{/if}
 		{/if}
 
 		{#if answered}
-			<p class="st-feedback" class:st-correct={answered.correct} data-testid="check-feedback">
-				{answered.correct ? 'Correct.' : 'Noted — not quite, but keep going.'}
-			</p>
+			<!-- Acknowledgement, not a verdict. The app does not decide whether an
+			     answer was right, so it must not imply one either way. -->
+			<p class="st-feedback" data-testid="check-feedback">Answer recorded.</p>
 		{:else if nudged}
 			<p class="st-nudge" data-testid="check-nudge">
 				Have a go at this one first — or press the arrow again to skip it.
@@ -263,11 +259,8 @@
 
 	.st-feedback {
 		margin-top: 0.4rem;
-		color: #b45309;
-
-		&.st-correct {
-			color: #15803d;
-		}
+		/* Deliberately neutral: no red, no green, nothing to read a verdict into. */
+		color: #64748b;
 	}
 
 	.st-nudge {

@@ -124,7 +124,6 @@
 				track('step_completed', leftId, {
 					surface: 'te_textbook',
 					answered_check: Boolean(answer),
-					check_correct: answer?.correct ?? null,
 					// Nudged but never answered is a deliberate skip, and is the thing
 					// worth counting separately from a page that asked nothing.
 					nudged: Boolean(get(checkNudges)[leftId])
