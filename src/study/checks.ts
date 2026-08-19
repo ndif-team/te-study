@@ -19,6 +19,33 @@ export const normalise = (s: string) =>
 		.toLowerCase()
 		.replace(/^[^\w]+|[^\w]+$/g, '');
 
+/**
+ * Comparison key for an answer or an expected token.
+ *
+ * `normalise` collapses a punctuation-only token to the empty string, which made
+ * every punctuation-only ANSWER equal to it. Wave 2 really produced a rank-1
+ * expected token of ',' -- against which typing '?' scored correct. So when
+ * stripping would leave nothing, fall back to the trimmed, lower-cased text:
+ * ',' stays ',' and only a comma matches it.
+ */
+export const answerKey = (s: string) => normalise(s) || s.trim().toLowerCase();
+
+/**
+ * The last whitespace-separated word of an answer.
+ *
+ * Wave 2 produced two answers prefixed 'unset ' -- 'unset 6' and 'unset create'
+ * -- from something outside the app (autofill or an IME; nothing in this
+ * codebase writes that string). `token-count` happened to survive it by
+ * stripping non-digits, while `top-token` marked a substantively correct
+ * 'create' wrong. Grading the last word as a FALLBACK removes that asymmetry.
+ *
+ * Deliberately the last word and not any word: 'create or make' must not earn
+ * credit for containing the right token among guesses. The accepted cost is that
+ * 'not Paris' would grade as 'Paris' -- judged the lesser risk in a field
+ * labelled "type the token", against a prefix artefact we have observed twice.
+ */
+const lastWord = (s: string) => s.trim().split(/\s+/).pop() ?? '';
+
 /** Live model state a check may be graded against. */
 export type LiveState = {
 	/** `modelData.probabilities`, sorted by logit descending with explicit ranks. */
@@ -71,12 +98,18 @@ export function gradeCheck(
 		// `predictedToken` — TE samples, so what it displays varies run to run.
 		const expected = tokenAtRank(state, check.rank ?? 0);
 		if (!expected) return null;
-		return { correct: normalise(text) === normalise(expected), expected };
+		const want = answerKey(expected);
+		const correct = answerKey(text) === want || answerKey(lastWord(text)) === want;
+		return { correct, expected };
 	}
 
 	// token-count: graded against the participant's own live tokenisation.
 	const count = state.tokens?.length ?? 0;
 	if (!count) return null;
-	const given = Number(text.replace(/[^0-9]/g, ''));
+	// Digits from the last word, falling back to the whole field. Reading every
+	// digit in the string was what let 'unset 6' through, but it also turned
+	// '1st guess 6' into 16.
+	const digits = (s: string) => s.replace(/[^0-9]/g, '');
+	const given = Number(digits(lastWord(text)) || digits(text));
 	return { correct: Number.isFinite(given) && given === count, expected: String(count) };
 }

@@ -52,7 +52,10 @@ describe('textbook check wiring', () => {
 		for (const [key, check] of Object.entries(TEXTBOOK_CHECKS)) {
 			if (check.kind !== 'choice') continue;
 			expect(check.options.length, `${key} needs at least two options`).toBeGreaterThan(1);
-			expect(check.options[check.correctIndex], `${key} correctIndex is out of range`).toBeDefined();
+			expect(
+				check.options[check.correctIndex],
+				`${key} correctIndex is out of range`
+			).toBeDefined();
 		}
 	});
 });
@@ -103,6 +106,65 @@ describe('grading', () => {
 		// had a chance to get right.
 		expect(gradeCheck(TEXTBOOK_CHECKS['how-transformers-work'], { text: 'Paris' }, {})).toBeNull();
 		expect(gradeCheck(TEXTBOOK_CHECKS['embedding'], { text: '4' }, {})).toBeNull();
+	});
+
+	/*
+	 * Both of these are regressions from wave 2 (2026-08-13), graded from the
+	 * `expected` values the telemetry recorded. Kept as literal reproductions so
+	 * a future rewrite of `normalise` cannot quietly reintroduce either.
+	 */
+	describe('wave-2 grading defects', () => {
+		it('does not accept any punctuation for a punctuation token', () => {
+			// A real rank-1 expected token was ',' -- and normalise(',') is ''. So was
+			// normalise('?'), which made a shrug score correct.
+			const punct = [
+				{ rank: 0, token: ' the' },
+				{ rank: 1, token: ',' }
+			];
+			const check = TEXTBOOK_CHECKS['output-probabilities'];
+			expect(gradeCheck(check, { text: '?' }, { probabilities: punct })?.correct).toBe(false);
+			expect(gradeCheck(check, { text: '!!' }, { probabilities: punct })?.correct).toBe(false);
+			expect(gradeCheck(check, { text: 'the' }, { probabilities: punct })?.correct).toBe(false);
+			// ...but the comma itself still counts.
+			expect(gradeCheck(check, { text: ',' }, { probabilities: punct })?.correct).toBe(true);
+		});
+
+		it("grades through the 'unset ' prefix, on both free-text kinds", () => {
+			// One participant submitted 'unset create' against an expected ' create'
+			// and was marked wrong, while their 'unset 6' on a token-count check was
+			// marked right. Same artefact, opposite outcomes.
+			const state = {
+				probabilities: [
+					{ rank: 0, token: ' the' },
+					{ rank: 1, token: ' create' }
+				]
+			};
+			expect(
+				gradeCheck(TEXTBOOK_CHECKS['output-probabilities'], { text: 'unset create' }, state)
+			).toMatchObject({ correct: true, expected: ' create' });
+
+			const counted = { tokens: ['a', 'b', 'c', 'd', 'e', 'f'] };
+			expect(gradeCheck(TEXTBOOK_CHECKS['embedding'], { text: 'unset 6' }, counted)?.correct).toBe(
+				true
+			);
+		});
+
+		it('still refuses a wrong answer carrying a stray prefix', () => {
+			// The fallback must not become "contains the right token somewhere".
+			const state = { probabilities: [{ rank: 0, token: ' Paris' }] };
+			const check = TEXTBOOK_CHECKS['how-transformers-work'];
+			expect(gradeCheck(check, { text: 'unset France' }, state)?.correct).toBe(false);
+			expect(gradeCheck(check, { text: 'Paris or France' }, state)?.correct).toBe(false);
+		});
+
+		it('reads the token count from the last word, not every digit in the field', () => {
+			const state = { tokens: ['a', 'b', 'c', 'd', 'e', 'f'] };
+			const check = TEXTBOOK_CHECKS['embedding'];
+			expect(gradeCheck(check, { text: 'about 6' }, state)?.correct).toBe(true);
+			// Was 16 when all digits were concatenated.
+			expect(gradeCheck(check, { text: '1st guess 6' }, state)?.correct).toBe(true);
+			expect(gradeCheck(check, { text: 'no idea' }, state)?.correct).toBe(false);
+		});
 	});
 
 	it('refuses to grade an empty answer', () => {
