@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { inputText, predictedToken, modelData } from '~/store';
 	import { STUDY_UNITS } from './config';
+	import { expectationFor } from './checks';
 	import { unitIdx, checkAnswers, phase, totalUnits } from './store';
 	import { track, saveResume } from './telemetry';
 
@@ -31,12 +32,6 @@
 		track('prompt_run', unit.id, { source: 'unit_prompt', prompt: unit.prompt });
 	};
 
-	const normalise = (s: string) =>
-		s
-			.trim()
-			.toLowerCase()
-			.replace(/^[^\w]+|[^\w]+$/g, '');
-
 	/**
 	 * The HIGHEST-PROBABILITY token, which is not the same thing as TE's
 	 * `predictedToken`.
@@ -59,32 +54,29 @@
 		if (!unit || answered) return;
 
 		let answer: string;
-		let correct: boolean;
 
 		if (unit.check.kind === 'choice') {
 			if (choice === null) return;
 			answer = unit.check.options[choice];
-			correct = choice === unit.check.correctIndex;
 		} else {
 			if (!freeAnswer.trim()) return;
 			answer = freeAnswer;
-			// Graded against the deterministic rank-0 token, not the sampled one.
-			correct = normalise(answer) === normalise(topToken);
 		}
 
-		checkAnswers.update((m) => ({ ...m, [unit.id]: { answer, correct } }));
+		checkAnswers.update((m) => ({ ...m, [unit.id]: { answer } }));
 
 		// Log-only, never gates progress: gating drives Prolific dropout
-		// (prolific-tutorial-design-spec.md §4.7).
+		// (prolific-tutorial-design-spec.md §4.7). Nothing is graded here — see
+		// checks.ts for why correctness is decided in analysis instead.
 		track('check_answered', unit.id, {
 			kind: unit.check.kind,
 			answer,
-			correct,
-			// The deterministic rank-0 token the answer was graded against...
+			expected: expectationFor(unit.check, { probabilities: $modelData?.probabilities ?? null }),
+			// The deterministic rank-0 token the answer will be scored against...
 			live_top_token: unit.check.kind === 'top-token' ? topToken || null : undefined,
 			// ...and the token TE happened to sample and display, kept so the two
-			// can be told apart if a participant answers with what they saw
-			// animate rather than what topped the chart.
+			// can be told apart if a participant answers with what they saw animate
+			// rather than what topped the chart.
 			sampled_token: unit.check.kind === 'top-token' ? ($predictedToken?.token ?? null) : undefined
 		});
 	};
@@ -92,8 +84,7 @@
 	const advance = () => {
 		if (!unit) return;
 		track('step_completed', unit.id, {
-			answered_check: Boolean(answered),
-			check_correct: answered?.correct ?? null
+			answered_check: Boolean(answered)
 		});
 
 		if (isLast) {
@@ -177,9 +168,8 @@
 			{/if}
 
 			{#if answered}
-				<p class="st-feedback" data-testid="check-feedback" class:st-correct={answered.correct}>
-					{answered.correct ? 'Correct.' : 'Noted — not quite, but keep going.'}
-				</p>
+				<!-- Acknowledgement, not a verdict: nothing here judges the answer. -->
+				<p class="st-feedback" data-testid="check-feedback">Answer recorded.</p>
 			{:else}
 				<button class="st-check-btn" data-testid="submit-check" on:click={submitCheck}
 					>Submit</button
@@ -339,11 +329,8 @@
 
 	.st-feedback {
 		font-size: 0.8rem;
-		color: #b45309;
-
-		&.st-correct {
-			color: #15803d;
-		}
+		/* Deliberately neutral: no red, no green, nothing to read a verdict into. */
+		color: #64748b;
 	}
 
 	button.check-btn,

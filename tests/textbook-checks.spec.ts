@@ -47,7 +47,7 @@ test.describe('textbook engagement checks', () => {
 		await expect(page.getByTestId('textbook-check')).toBeVisible();
 	});
 
-	test('answering a choice check records the answer and grades it', async ({ page }) => {
+	test('answering a choice check records the answer and its key', async ({ page }) => {
 		const pid = newPid('chk-answer');
 		await page.goto(plainUrl(pid));
 		await beginPlain(page);
@@ -58,7 +58,9 @@ test.describe('textbook engagement checks', () => {
 		await page.getByTestId('textbook-check').locator('input[type=radio]').nth(1).check();
 		await page.getByTestId('check-submit').click();
 
-		await expect(page.getByTestId('check-feedback')).toContainText(/correct/i);
+		// An acknowledgement, never a verdict. The wording must not let the
+		// participant infer one, in either direction.
+		await expect(page.getByTestId('check-feedback')).toHaveText('Answer recorded.');
 
 		const events = await waitForEvents(
 			pid,
@@ -67,11 +69,13 @@ test.describe('textbook engagement checks', () => {
 		);
 		const answered = events.find((e) => e.event_type === 'check_answered')!;
 		expect(answered.step_id).toBe('blocks');
-		expect(answered.payload.correct).toBe(true);
+		expect(answered.payload.correct).toBeUndefined();
+		expect(answered.payload.expected).toBe('12');
+		expect(answered.payload.answer).toBe('12');
 		expect(answered.payload.surface).toBe('te_textbook');
 	});
 
-	test('a wrong answer is recorded but never blocks', async ({ page }) => {
+	test('an off-key answer is recorded but never blocks', async ({ page }) => {
 		const pid = newPid('chk-wrong');
 		await page.goto(plainUrl(pid));
 		await beginPlain(page);
@@ -80,7 +84,10 @@ test.describe('textbook engagement checks', () => {
 
 		await page.getByTestId('textbook-check').locator('input[type=radio]').first().check();
 		await page.getByTestId('check-submit').click();
-		await expect(page.getByTestId('check-feedback')).toContainText(/not quite/i);
+		// Same acknowledgement as a key-matching answer: an answer the participant
+		// got wrong must be indistinguishable on screen from one they got right,
+		// because the app is not the thing that knows.
+		await expect(page.getByTestId('check-feedback')).toHaveText('Answer recorded.');
 
 		// Answered, so the arrow goes through first time.
 		const before = await currentPageNumber(page);
@@ -145,12 +152,10 @@ test.describe('textbook engagement checks', () => {
 			(e) => e.some((x) => x.event_type === 'step_completed' && x.step_id === 'blocks'),
 			'expected the skipped check page to be closed out'
 		);
-		const done = events.find(
-			(e) => e.event_type === 'step_completed' && e.step_id === 'blocks'
-		)!;
+		const done = events.find((e) => e.event_type === 'step_completed' && e.step_id === 'blocks')!;
 		expect(done.payload.answered_check).toBe(false);
 		expect(done.payload.nudged).toBe(true);
-		expect(done.payload.check_correct).toBeNull();
+		expect(done.payload.check_correct).toBeUndefined();
 	});
 
 	test('the check area never sits underneath TE’s nav footer', async ({ page }) => {
