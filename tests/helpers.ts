@@ -136,25 +136,25 @@ export async function beginPlain(page: Page): Promise<void> {
 /**
  * Answers the check for unit `idx`, then advances.
  *
- * Choice checks are graded against `config.ts`, so `correct` is honoured
- * exactly. Top-token checks are graded against whatever the model actually
- * predicted, which no test can know in advance — so `correct: true` there means
- * "submit something and let the spec assert the grading was self-consistent"
- * (see checks.spec.ts, which reconciles the answer against the recorded
- * `live_top_token`). Deliberately-wrong answers are exact either way.
+ * `matchesKey` picks WHICH answer to give, not whether the app will call it
+ * right — the app no longer decides that at all. For a choice check it selects
+ * the configured `correctIndex` or a different option; for a free-text check the
+ * distinction is meaningless in advance, since the answer key is whatever the
+ * model happens to predict, so both branches simply type something. Specs that
+ * care assert against the recorded `expected` instead.
  */
-export async function answerAndAdvance(page: Page, idx: number, correct = true): Promise<void> {
+export async function answerAndAdvance(page: Page, idx: number, matchesKey = true): Promise<void> {
 	const unit = STUDY_UNITS[idx];
 	if (!unit) throw new Error(`no unit at index ${idx}`);
 
 	if (unit.check.kind === 'choice') {
-		const wrongIndex = unit.check.correctIndex === 0 ? 1 : 0;
-		const target = correct ? unit.check.correctIndex : wrongIndex;
+		const otherIndex = unit.check.correctIndex === 0 ? 1 : 0;
+		const target = matchesKey ? unit.check.correctIndex : otherIndex;
 		await page.getByTestId('study-check').locator('input[type="radio"]').nth(target).check();
 	} else {
 		await page
 			.getByTestId('check-free-input')
-			.fill(correct ? 'unknown-token' : 'definitely-not-the-token');
+			.fill(matchesKey ? 'unknown-token' : 'definitely-not-the-token');
 	}
 
 	await page.getByTestId('submit-check').click();
